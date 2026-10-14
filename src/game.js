@@ -586,7 +586,8 @@ function renderHUD() {
 
 function drawDialog(text) {
   const w = 300, lines = Font.wrap(text.replace(/\{(\w+)\}/g, (_, k) => keyName(k)), w - 20);
-  const h = lines.length * 10 + 12, x = Math.round(VW / 2 - w / 2), y = VH - h - 8;
+  // with touch buttons on screen the bottom belongs to the thumbs, so signs show up top
+  const h = lines.length * 10 + 12, x = Math.round(VW / 2 - w / 2), y = touchShown ? 34 : VH - h - 8;
   ctx.fillStyle = 'rgba(16,12,28,0.88)'; ctx.fillRect(x, y, w, h);
   ctx.fillStyle = '#c88a4a'; ctx.fillRect(x, y, w, 1); ctx.fillRect(x, y + h - 1, w, 1); ctx.fillRect(x, y, 1, h); ctx.fillRect(x + w - 1, y, 1, h);
   lines.forEach((l, i) => Font.draw(l, x + 10, y + 7 + i * 10, { color: '#fff4e0', shadow: '#3a2a1a' }));

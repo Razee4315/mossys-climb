@@ -70,8 +70,8 @@ class Menu {
       const sel = i === this.sel;
       const dis = it.disabled && it.disabled();
       const yy = y + i * gap;
-      const w = Font.width(label) + 24;
-      this.rects.push({ x: cx - w / 2, y: yy - 4, w, h: gap - 1 });
+      const w = Font.width(label) + 24, hw = Math.max(w, o.hitW || 0);
+      this.rects.push({ x: cx - hw / 2, y: yy - Math.floor((gap - 9) / 2) - 1, w: hw, h: gap });
       if (sel) {
         ctx.fillStyle = 'rgba(255,216,74,0.12)'; ctx.fillRect(Math.round(cx - w / 2), yy - 3, Math.round(w), 13);
         const bob = Math.round(Math.sin(this.t * 8) * 1.5);
@@ -179,9 +179,9 @@ const TitleScreen = {
     Font.draw('A VERY TALL ADVENTURE', VW / 2, 74, { color: '#ffffff', align: 'center', outline: true });
     const off = Math.round((1 - easeOutCubic(this.menuT)) * 130);
     panel(VW / 2 - 78, 92 + off, 156, 72, '#ffd84a', 0.72);
-    this.menu.render(VW / 2, 100 + off);
+    this.menu.render(VW / 2, 100 + off, { hitW: 156 });
     if (this.exitT > 0) Font.draw('PRESS BACK AGAIN TO EXIT', VW / 2, VH - 11, { color: '#ffd84a', align: 'center', outline: true });
-    else hint(Input.device === 'touch' ? 'TAP TO CHOOSE' : '▲▼ CHOOSE   ' + keyName('confirm') + ' SELECT');
+    else if (!touchUI()) hint('▲▼ CHOOSE   ' + keyName('confirm') + ' SELECT');
     Font.draw('V' + APP_VERSION, VW - 5, VH - 10, { color: '#ffffff', align: 'right', alpha: 0.45 });
   },
 };
@@ -204,8 +204,9 @@ const StoryScreen = {
   enter(which) { this.which = which; this.cards = STORY[which]; this.i = 0; this.t = 0; if (which === 'ending') Sound.Music.play('victory'); },
   update(dt) {
     this.t += dt;
-    const next = Input.pressed.confirm || Input.pressed.jump || Input.pointer.clicked;
-    if (Input.pressed.back) { this.finish(); return; }
+    const pt = Input.pointer;
+    if (Input.pressed.back || (pt.clicked && pt.x > VW - 64 && pt.y < 22)) { pt.clicked = false; Sound.sfx('back'); this.finish(); return; }
+    const next = Input.pressed.confirm || Input.pressed.jump || pt.clicked;
     if (next && this.t > 0.4) {
       Input.pointer.clicked = false;
       Sound.sfx('select');
@@ -228,7 +229,8 @@ const StoryScreen = {
     });
     if (Math.floor(this.t * 3) % 2) Font.draw('▼', VW - 32, VH - 26, { color: '#ffd84a' });
     Font.draw(`${this.i + 1}/${this.cards.length}`, 26, 8, { color: '#ffffff', outline: true });
-    Font.draw(keyName('back') + ' SKIP', VW - 8, 8, { color: '#a8a0c0', align: 'right', outline: true });
+    Font.draw(touchUI() ? 'SKIP ▶' : keyName('back') + ' SKIP', VW - 8, 8, { color: '#a8a0c0', align: 'right', outline: true });
+    if (touchUI() && this.t > 1.2) Font.draw('TAP TO CONTINUE', VW / 2, VH - 11, { color: '#a8a0c0', align: 'center', outline: true, alpha: 0.8 });
   },
 };
 function drawStoryArt(kind, t) {
@@ -285,12 +287,13 @@ const MapScreen = {
     if (!this.canvas) this.canvas = buildMapArt();
     this.sel = sel != null ? sel : Math.min(Save.data.unlocked - 1, LEVELS.length - 1);
     this.camY = this.targetY();
-    this.t = 0; this.walk = null;
+    this.t = 0; this.walk = null; this.free = false; this.vel = 0;
     Sound.Music.play('title');
   },
   targetY() { return clamp(MAP_NODES[this.sel][1] - 118, 0, MAP_H - VH + 66); },
   choose(i) {
     if (i < 0 || i >= LEVELS.length || i === this.sel) return;
+    this.free = false;
     this.walk = { from: this.sel, to: i, t: 0 };
     this.sel = i; Sound.sfx('move');
   },
@@ -319,7 +322,16 @@ const MapScreen = {
         }
       });
     }
-    this.camY = lerp(this.camY, this.targetY(), Math.min(1, dt * 5));
+    // drag the mountain with a finger; it keeps gliding a little after you let go
+    const maxY = MAP_H - VH + 66;
+    if (pt.down && pt.drag) {
+      this.free = true;
+      this.camY = clamp(this.camY - pt.fdy, 0, maxY);
+      this.vel = this.vel * 0.6 + (-pt.fdy / dt) * 0.4;
+    } else if (this.free) {
+      this.camY = clamp(this.camY + this.vel * dt, 0, maxY);
+      this.vel *= Math.pow(0.04, dt);
+    } else this.camY = lerp(this.camY, this.targetY(), Math.min(1, dt * 5));
   },
   render() {
     const cy = Math.round(this.camY);
@@ -401,7 +413,8 @@ const MapScreen = {
     button('CHARACTER', VW - 78, VH - 18, 70, () => Screens.go(CharScreen, MapScreen));
     button(locked ? 'LOCKED' : '▶ PLAY', VW / 2 - 30, VH - 18, 60, () => this.play(), locked ? '#6a6080' : '#7aff9a');
     Font.draw('CHOOSE A LEVEL', VW / 2, 6, { color: '#ffd84a', align: 'center', outline: true });
-    if (Input.device !== 'touch') Font.draw(`▲▼ MOVE   ${keyName('confirm')} PLAY   ${keyName('action')} CHARACTER   ${keyName('back')} BACK`, VW / 2, 17, { color: '#e8e0ff', align: 'center', outline: true });
+    if (!touchUI()) Font.draw(`▲▼ MOVE   ${keyName('confirm')} PLAY   ${keyName('action')} CHARACTER   ${keyName('back')} BACK`, VW / 2, 17, { color: '#e8e0ff', align: 'center', outline: true });
+    else Font.draw('SWIPE TO LOOK AROUND   TAP A LEVEL TO PICK IT', VW / 2, 17, { color: '#e8e0ff', align: 'center', outline: true, alpha: 0.85 });
   },
 };
 const THEME_COL = { meadow: '#7ad85a', forest: '#3fbf7a', cave: '#a08aff', magma: '#ff7a3a', ruins: '#e8c070', ice: '#8ad4ff', storm: '#8a9aff', summit: '#ffd84a' };
@@ -485,6 +498,15 @@ const CharScreen = {
     if (pt.clicked) {
       if (rectHit(pt.x, pt.y, 1, 1, 8, 60, 40, 60)) { pt.clicked = false; this.i = (this.i - 1 + n) % n; this.slide = -1; Sound.sfx('move'); }
       if (rectHit(pt.x, pt.y, 1, 1, VW - 48, 60, 40, 60)) { pt.clicked = false; this.i = (this.i + 1) % n; this.slide = 1; Sound.sfx('move'); }
+      CHARACTERS.forEach((ch, i) => {
+        const x = VW / 2 - (n * 24) / 2 + i * 24 + 3;
+        if (pt.clicked && rectHit(pt.x, pt.y, 1, 1, x - 3, 24, 24, 26) && i !== this.i) { pt.clicked = false; this.slide = i > this.i ? 1 : -1; this.i = i; Sound.sfx('move'); }
+      });
+    }
+    const sw = pt.swipe;
+    if (sw && Math.abs(sw.dx) > 24 && Math.abs(sw.dx) > Math.abs(sw.dy)) {
+      const d = sw.dx < 0 ? 1 : -1;
+      this.i = (this.i + d + n) % n; this.slide = d; Sound.sfx('move');
     }
   },
   pick() {
@@ -527,7 +549,8 @@ const CharScreen = {
         for (let j = 0; j < 5; j++) { ctx.fillStyle = j < v ? '#ffd84a' : '#3a3450'; ctx.fillRect(x + 44 + j * 9, 93 + i * 10, 7, 5); }
       });
       Font.draw(`♥×${c.hearts}`, x + 100, 92, { color: '#ff4d6d', outline: true });
-      const lines = Font.wrap(c.power, 180);
+      const power = c.power.replace(/\{(\w+)\}/g, (_, k) => (k === 'action' && touchUI() ? powerButtonLabel(c.id) : keyName(k)));
+      const lines = Font.wrap(power, 180);
       lines.forEach((l, i) => Font.draw(l, x, 134 + i * 9, { color: '#7aff9a' }));
     } else {
       Font.draw('REACH THE SUMMIT AND\nDEFEAT STORMBEAK TO\nUNLOCK THIS CLIMBER.', x, 96, { color: '#a8a0c0' });
@@ -535,7 +558,8 @@ const CharScreen = {
     Font.draw(open ? `"${c.tagline}"` : '', VW / 2, 172, { color: '#fff4c0', align: 'center', outline: true });
     button('◀ BACK', 8, VH - 22, 52, () => Screens.go(this.back));
     button(open ? 'SELECT' : 'LOCKED', VW / 2 - 30, VH - 22, 60, () => this.pick(), open ? '#7aff9a' : '#6a6080');
-    if (Input.device !== 'touch') Font.draw(`◀▶ BROWSE   ${keyName('confirm')} SELECT`, VW - 8, VH - 18, { color: '#a8a0c0', align: 'right', outline: true });
+    if (!touchUI()) Font.draw(`◀▶ BROWSE   ${keyName('confirm')} SELECT`, VW - 8, VH - 18, { color: '#a8a0c0', align: 'right', outline: true });
+    else Font.draw('SWIPE TO BROWSE', VW - 8, VH - 18, { color: '#a8a0c0', align: 'right', outline: true });
   },
 };
 
@@ -583,8 +607,8 @@ const OptionsScreen = {
     else { ctx.fillStyle = 'rgba(10,8,20,0.6)'; ctx.fillRect(0, 0, VW, VH); }
     Font.draw('OPTIONS', VW / 2, 9, { color: '#ffd84a', align: 'center', outline: true, scale: 2 });
     panel(VW / 2 - 120, 30, 240, 4 + this.menu.items.length * 14 + 8, '#4ae0ff');
-    this.menu.render(VW / 2, 38, { gap: 14 });
-    hint('◀▶ CHANGE   ' + keyName('back') + ' BACK');
+    this.menu.render(VW / 2, 38, { gap: 14, hitW: 240 });
+    hint(touchUI() ? 'TAP A SETTING TO CHANGE IT' : '◀▶ CHANGE   ' + keyName('back') + ' BACK');
   },
 };
 
@@ -600,34 +624,38 @@ function toggleFullscreen() {
 // ---------------------------------------------------------------------
 const HowToScreen = {
   enter(back) { this.back = back || TitleScreen; this.page = 0; },
+  flip() { this.page = 1 - this.page; Sound.sfx('move'); },
+  leave() { Sound.sfx('back'); Screens.go(this.back); },
   update() {
-    const I = Input.pressed;
-    if (I.left || I.right) { this.page = 1 - this.page; Sound.sfx('move'); }
-    if (I.back || I.confirm) { Sound.sfx('back'); Screens.go(this.back); }
-    const pt = Input.pointer;
-    if (pt.clicked) { pt.clicked = false; if (pt.y > VH - 26) Screens.go(this.back); else { this.page = 1 - this.page; Sound.sfx('move'); } }
+    const I = Input.pressed, pt = Input.pointer;
+    if (I.left || I.right) this.flip();
+    if (I.back || I.confirm) { this.leave(); return; }
+    if (pt.swipe && Math.abs(pt.swipe.dx) > 24 && Math.abs(pt.swipe.dx) > Math.abs(pt.swipe.dy)) this.flip();
+    if (pt.clicked && pt.y < VH - 24) { pt.clicked = false; this.flip(); }
   },
   render() {
     MenuBG.draw(STEP, 0.55);
+    const touch = touchUI();
     Font.draw(this.page ? 'SURVIVAL TIPS' : 'CONTROLS', VW / 2, 10, { color: '#ffd84a', align: 'center', outline: true, scale: 2 });
     panel(16, 30, VW - 32, 156, '#ffd84a');
-    const rows = this.page === 0 ? [
-      ['MOVE', 'ARROWS / WASD', 'D-PAD / STICK'],
-      ['JUMP', 'SPACE / Z / UP', 'A'],
-      ['POWER', 'X / SHIFT / J', 'X / B / RB'],
-      ['DROP DOWN', 'DOWN + JUMP', 'DOWN + A'],
-      ['LOOK DOWN', 'HOLD DOWN', 'HOLD DOWN'],
-      ['RETRY', 'R', 'SELECT'],
-      ['PAUSE', 'ESC / P', 'START'],
-      ['MUTE / FULLSCREEN', 'M / F', ''],
-    ] : null;
-    if (rows) {
-      Font.draw('ACTION', 26, 38, { color: '#a8a0c0' }); Font.draw('KEYBOARD', 140, 38, { color: '#a8a0c0' }); Font.draw('GAMEPAD', 270, 38, { color: '#a8a0c0' });
+    if (this.page === 0 && touch) this.drawTouch();
+    else if (this.page === 0) {
+      const rows = [
+        ['MOVE', 'ARROWS / WASD', 'D-PAD / STICK'],
+        ['JUMP', 'SPACE / Z / UP', 'A'],
+        ['POWER', 'X / SHIFT / J', 'X / B / RB'],
+        ['DROP DOWN', 'DOWN + JUMP', 'DOWN + A'],
+        ['LOOK DOWN', 'HOLD DOWN', 'HOLD DOWN'],
+        ['RETRY', 'R', 'SELECT'],
+        ['PAUSE', 'ESC / P', 'START'],
+        ['MUTE / FULLSCREEN', 'M / F', ''],
+      ];
+      const c1 = 26, c2 = Math.round(VW * 0.36), c3 = Math.round(VW * 0.7);
+      Font.draw('ACTION', c1, 38, { color: '#a8a0c0' }); Font.draw('KEYBOARD', c2, 38, { color: '#a8a0c0' }); Font.draw('GAMEPAD', c3, 38, { color: '#a8a0c0' });
       rows.forEach(([a, k, g], i) => {
-        const y = 52 + i * 14;
-        Font.draw(a, 26, y, { color: '#ffffff' }); Font.draw(k, 140, y, { color: '#ffd84a' }); Font.draw(g, 270, y, { color: '#4ae0ff' });
+        const y = 52 + i * 15;
+        Font.draw(a, c1, y, { color: '#ffffff' }); Font.draw(k, c2, y, { color: '#ffd84a' }); Font.draw(g, c3, y, { color: '#4ae0ff' });
       });
-      Font.draw('ON PHONES: USE THE ON-SCREEN BUTTONS.', VW / 2, 168, { color: '#7aff9a', align: 'center' });
     } else {
       const tips = [
         'HOLD JUMP TO JUMP HIGHER. TAP FOR A SMALL HOP.',
@@ -641,7 +669,39 @@ const HowToScreen = {
       ];
       tips.forEach((t, i) => Font.draw('★ ' + t, 28, 42 + i * 17, { color: i % 2 ? '#fff4c0' : '#ffffff' }));
     }
-    hint(`◀▶ PAGE ${this.page + 1}/2   ${keyName('back')} BACK`);
+    button('◀ BACK', 8, VH - 18, 52, () => this.leave());
+    Font.draw(touch ? `SWIPE OR TAP FOR MORE   ${this.page + 1}/2` : `◀▶ PAGE ${this.page + 1}/2   ${keyName('back')} BACK`, VW - 8, VH - 15, { color: '#a8a0c0', align: 'right', outline: true });
+  },
+  // a little phone with the on-screen controls where your thumbs go
+  drawTouch() {
+    const x0 = 34, y0 = 38, w = VW - 68, h = 104;
+    ctx.fillStyle = '#0c0a18'; ctx.fillRect(x0, y0, w, h);
+    ctx.fillStyle = '#3a3460'; ctx.fillRect(x0, y0, w, 1); ctx.fillRect(x0, y0 + h - 1, w, 1); ctx.fillRect(x0, y0, 1, h); ctx.fillRect(x0 + w - 1, y0, 1, h);
+    // the zones, faintly
+    ctx.fillStyle = 'rgba(122,216,90,0.10)'; ctx.fillRect(x0 + 1, y0 + 30, Math.round(w * 0.45) - 1, h - 31);
+    ctx.fillStyle = 'rgba(255,216,74,0.08)'; ctx.fillRect(x0 + Math.round(w * 0.45) + 1, y0 + 26, w - Math.round(w * 0.45) - 2, h - 27);
+    const btn = (cx, cy, r, label, col) => {
+      ctx.fillStyle = 'rgba(255,255,255,0.12)'; circle(cx, cy, r);
+      ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(cx + 0.5, cy + 0.5, r, 0, Math.PI * 2); ctx.stroke();
+      Font.draw(label, cx + 1, cy - 3, { color: col, align: 'center' });
+    };
+    const by = y0 + h - 18;
+    btn(x0 + 22, by, 10, '◀', '#ffffff'); btn(x0 + 46, by, 10, '▶', '#ffffff');
+    btn(x0 + w - 24, by - 2, 13, '▲', '#ffd84a');
+    btn(x0 + w - 56, by + 2, 9, 'P', '#ff9a6a');
+    ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.fillRect(x0 + w - 20, y0 + 5, 13, 13);
+    Font.draw('II', x0 + w - 13, y0 + 8, { color: '#ffffff', align: 'center' });
+    // labels
+    Font.draw('MOVE: HOLD ◀ OR ▶', x0 + 8, y0 + 34, { color: '#a6f27c' });
+    Font.draw('SLIDE BETWEEN THEM', x0 + 8, y0 + 44, { color: '#c8c0d8' });
+    Font.draw('SLIDE DOWN: CROUCH', x0 + 8, y0 + 56, { color: '#c8c0d8' });
+    Font.draw('JUMP: TAP ANYWHERE', x0 + w - 8, y0 + 30, { color: '#ffd84a', align: 'right' });
+    Font.draw('HOLD FOR HIGHER', x0 + w - 8, y0 + 40, { color: '#c8c0d8', align: 'right' });
+    Font.draw('P = DASH OR SLAM', x0 + w - 8, y0 + 52, { color: '#ff9a6a', align: 'right' });
+    Font.draw('(EMBER AND BRUNO)', x0 + w - 8, y0 + 62, { color: '#c8c0d8', align: 'right' });
+    Font.draw('PAUSE', x0 + w - 24, y0 + 8, { color: '#ffffff', align: 'right' });
+    Font.draw('DROP THROUGH PLANKS: SLIDE DOWN AND TAP ▲', VW / 2, y0 + h + 8, { color: '#7aff9a', align: 'center' });
+    Font.draw('BUTTON SIZE AND VIBRATION ARE IN OPTIONS', VW / 2, y0 + h + 22, { color: '#a8a0c0', align: 'center' });
   },
 };
 
@@ -671,8 +731,8 @@ const PauseScreen = {
     Font.draw(`LEVEL ${level.idx + 1}: ${level.def.name}`, VW / 2, 42, { color: '#ffffff', align: 'center', outline: true });
     Font.draw(`⏱ ${formatTime(level.time)}    ◆ ${gemsGot()}/${level.gemTotal}    ☠ ${level.deaths}`, VW / 2, 54, { color: '#c8c0d8', align: 'center', outline: true });
     panel(VW / 2 - 90, 70, 180, 84, '#ffd84a');
-    this.menu.render(VW / 2, 78);
-    hint(`${keyName('pause')} RESUME`);
+    this.menu.render(VW / 2, 78, { hitW: 180 });
+    if (!touchUI()) hint(`${keyName('pause')} RESUME`);
   },
 };
 
@@ -698,7 +758,7 @@ const ClearScreen = {
     const starTimes = [1.0, 1.35, 1.7];
     while (this.starSounds < 3 && this.t > starTimes[this.starSounds]) { if (this.R.stars[this.starSounds]) Sound.sfx('checkpoint'); this.starSounds++; }
     if (this.t > 0.6) this.menu.update(dt);
-    else if (Input.pressed.confirm) this.t = 2;
+    else if (Input.pressed.confirm || Input.pointer.clicked) { Input.pointer.clicked = false; this.t = 2; }
   },
   render() {
     const R = this.R, t = this.t;
@@ -731,7 +791,7 @@ const ClearScreen = {
     }
     if (R.unlockedChar && t > 2) Font.draw('NEW CLIMBER UNLOCKED: GOLDEN MOSSY!', VW / 2, y0 + 130, { color: '#ffd84a', align: 'center', outline: true });
     else if (R.unlockedLevel && t > 2) Font.draw('NEXT LEVEL UNLOCKED - KEEP CLIMBING!', VW / 2, y0 + 130, { color: '#7aff9a', align: 'center', outline: true });
-    if (t > 0.6) this.menu.render(VW / 2, y0 + 144, { gap: 13 });
+    if (t > 0.6) this.menu.render(VW / 2, y0 + 144, { gap: 13, hitW: 200 });
   },
 };
 
@@ -792,7 +852,12 @@ function updateTouchVisibility() {
   }
   touchEl.style.setProperty('--s', String(S.touchSize || 1));
   const abil = document.getElementById('b-act');
-  if (abil) abil.style.visibility = player.char && player.char.ability !== 'grip' ? 'visible' : 'hidden';
+  const label = player.char ? powerButtonLabel(player.char.id) : null;
+  if (abil && abil.dataset.label !== String(label)) {
+    abil.dataset.label = String(label);
+    abil.classList.toggle('show', !!label);
+    if (label) document.getElementById('b-act-label').textContent = label;
+  }
 }
 
 // ---------------------------------------------------------------------
@@ -895,7 +960,7 @@ async function boot() {
 function exposeDebug() {
   const send = (type, code) => window.dispatchEvent(new KeyboardEvent(type, { code }));
   window.MC = {
-    get level() { return level; }, player, enemies: () => enemies, Screens, PlayScreen, MapScreen, TitleScreen, OpeningScreen, OptionsScreen, Save, cam, fx, LEVELS,
+    get level() { return level; }, player, enemies: () => enemies, Screens, PlayScreen, MapScreen, TitleScreen, OpeningScreen, OptionsScreen, CharScreen, HowToScreen, StoryScreen, PauseScreen, ClearScreen, Save, cam, fx, LEVELS, Input,
     play(i) { Sound.init(); Screens.now(PlayScreen, i); this.step(1); },
     step(n = 1) { for (let i = 0; i < n; i++) { Input.poll(); Screens.update(STEP); } Screens.render(); updateTouchVisibility(); return { x: player.x, y: player.y, dead: player.dead, hearts: player.hearts, screen: Screens.top && Object.keys(window.MC).find((k) => window.MC[k] === Screens.top) }; },
     down(code) { send('keydown', code); }, up(code) { send('keyup', code); },

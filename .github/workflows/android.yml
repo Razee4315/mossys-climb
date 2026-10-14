@@ -167,17 +167,21 @@ jobs:
             echo "No release APK found. Outputs:"; find src-tauri/gen/android/app/build/outputs || true
             exit 1
           fi
-          SUFFIX=$([ "$HAS_KEYSTORE" = "true" ] && echo "" || echo "-testkey")
+          # builds without the release key (e.g. forks, PRs) are marked so they're never mistaken for a release
+          SUFFIX=$([ "$HAS_KEYSTORE" = "true" ] && echo "" || echo "-test")
           mkdir -p out
-          cp "$APK" "out/MossysClimb-v$V-android-arm64$SUFFIX.apk"
+          cp "$APK" "out/Mossys-Climb-v$V$SUFFIX.apk"
           ls -la out
+          # log which key signed it (compare with the fingerprint in the signing README)
+          APKSIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/ 2>/dev/null | sort -V | tail -1 || true)
+          if [ -n "$APKSIGNER" ]; then "${APKSIGNER}apksigner" verify --print-certs out/*.apk | grep -i -E "signer|SHA-256" || true; fi
           echo "VERSION=$V" >> "$GITHUB_ENV"
           echo "SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v7
         with:
-          name: MossysClimb-android-v${{ env.VERSION }}
+          name: Mossys-Climb-v${{ env.VERSION }}
           path: out/*.apk
           if-no-files-found: error
 
@@ -192,15 +196,15 @@ jobs:
           body: |
             ## Mossy's Climb v${{ env.VERSION }}
 
-            A pixel-art platformer about climbing a very tall mountain.
+            A pixel-art platformer about climbing a very tall mountain: 8 levels, 5 climbers and a storm-crow boss at the summit.
 
             ### Install on Android
-            1. Download the `.apk` below on your phone (Android 7.0 or newer, 64-bit).
+            1. Download **`Mossys-Climb-v${{ env.VERSION }}.apk`** below on your phone (Android 7.0 or newer, 64-bit).
             2. Open it and allow "install unknown apps" for your browser when asked.
-            3. Play sideways. Back button = pause.
+            3. Play sideways. The Back button pauses.
 
-            Builds named `-testkey` are signed with the CI test key. They upgrade over each other,
-            but a future build signed with a permanent release key will need one uninstall first.
+            > **Coming from v1.0.x?** Those test builds used a temporary signing key. Uninstall the old
+            > version once, then install this one. Every future update installs straight over it.
 
             Prefer the browser? Play instantly on the web: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
           draft: false

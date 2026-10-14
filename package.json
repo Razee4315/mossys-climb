@@ -1,7 +1,7 @@
 {
   "name": "mossys-climb",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "A pixel-art platformer about climbing a very tall mountain.",
   "scripts": {
     "build": "node tools/build.js",

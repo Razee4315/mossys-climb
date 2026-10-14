@@ -36,10 +36,11 @@
 
 | | Keyboard | Phone |
 |---|---|---|
-| Move | Arrows / WASD | Left side of the screen |
-| Jump (hold = higher) | Space / Z | Right side of the screen |
-| Power | X / Shift | POWER button |
-| Pause | Esc / P | ❚❚ or Back |
+| Move | Arrows / WASD | ◀ ▶ on the left (slide between them) |
+| Jump (hold = higher) | Space / Z | Tap anywhere on the right |
+| Crouch / drop through planks | Down (+ Jump) | Slide your left thumb down (+ jump) |
+| Dash / Slam (Ember, Bruno) | X / Shift | DASH / SLAM button |
+| Pause | Esc / P | ❚❚ or the Back button |
 
 Gamepads work too. Progress saves automatically.
 

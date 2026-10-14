@@ -156,7 +156,7 @@ const CHARACTERS = [
     pal: { A: '#4aa8ff', a: '#2a5fc0', h: '#a8dcff', B: '#f4f8ff', b: '#c8d4ea', w: '#ffffff', k: '#14182a', C: '#ffb02e', c: '#d06a14', L: '#ffb02e', F: '#d06a14' },
     speed: 108, hearts: 3, ability: 'double',
     tagline: 'TOO SMALL TO FLY. TOO STUBBORN TO FALL.',
-    power: 'FLUTTER: PRESS JUMP AGAIN IN THE AIR FOR A DOUBLE JUMP.',
+    power: 'FLUTTER: PRESS {jump} AGAIN IN THE AIR FOR A DOUBLE JUMP.',
     stats: { speed: 3, jump: 5, wall: 3, tough: 3 },
   },
   {
@@ -164,7 +164,7 @@ const CHARACTERS = [
     pal: { A: '#ff8a2e', a: '#c4521a', h: '#ffc07a', B: '#fff4e8', b: '#e0c8b4', w: '#ffffff', k: '#1e1420', C: '#ff8a2e', c: '#c4521a', L: '#c4521a', F: '#3a2020' },
     speed: 124, hearts: 3, ability: 'dash',
     tagline: 'FASTEST PAWS ON THE MOUNTAIN.',
-    power: 'DASH: PRESS POWER TO BURST SIDEWAYS. DASHING THROUGH ENEMIES DEFEATS THEM.',
+    power: 'DASH: PRESS {action} TO BURST SIDEWAYS. DASHING THROUGH ENEMIES DEFEATS THEM.',
     stats: { speed: 5, jump: 3, wall: 3, tough: 3 },
   },
   {
@@ -172,7 +172,7 @@ const CHARACTERS = [
     pal: { A: '#a86a3c', a: '#6e4022', h: '#d29a62', B: '#f0d0a0', b: '#c8a070', w: '#ffffff', k: '#1e1410', C: '#ff9aa8', c: '#c86a7a', L: '#6e4022', F: '#3e2414' },
     speed: 106, hearts: 5, ability: 'slam',
     tagline: 'SOFT FUR. HARD HEAD. FIVE HEARTS.',
-    power: 'GROUND SLAM: PRESS POWER IN THE AIR TO SMASH DOWN. CRUSHES EVEN SPIKY FOES.',
+    power: 'GROUND SLAM: PRESS {action} IN THE AIR TO SMASH DOWN. CRUSHES EVEN SPIKY FOES.',
     stats: { speed: 2, jump: 3, wall: 3, tough: 5 },
   },
   {

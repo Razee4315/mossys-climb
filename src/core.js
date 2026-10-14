@@ -136,9 +136,13 @@ const Input = (() => {
   const padLatchPrev = {};
   const cur = {}, prev = {}, pressed = {}, released = {};
   let anyPressed = false, anyLatch = false;
-  let device = 'kb';
-  const pointer = { x: -1, y: -1, moved: false, clicked: false, down: false, active: false };
-  let clickLatch = false;
+  // phones start in touch mode, so the very first screen already shows touch wording
+  let device = window.matchMedia && window.matchMedia('(pointer: coarse)').matches ? 'touch' : 'kb';
+  // drag: the finger has moved far enough that lifting it is not a tap; fdx/fdy: drag since
+  // the last poll; swipe: {dx, dy} for one poll after a drag ends (all in game pixels)
+  const pointer = { x: -1, y: -1, moved: false, clicked: false, down: false, active: false, drag: false, fdx: 0, fdy: 0, swipe: null };
+  let clickLatch = false, swipeLatch = null, suppressUp = false;
+  let downId = null, downCX = 0, downCY = 0, downX = 0, downY = 0, accDX = 0, accDY = 0, lastX = 0, lastY = 0;
   let onAnyInput = null;
 
   const PREVENT = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space', 'Backspace']);
@@ -146,59 +150,86 @@ const Input = (() => {
     if (PREVENT.has(e.code)) e.preventDefault();
     if (e.repeat) return;
     keysDown.add(e.code); keyLatch.add(e.code); anyLatch = true;
-    device = 'kb';
+    if (e.isTrusted) device = 'kb';
     if (onAnyInput) onAnyInput();
   });
   window.addEventListener('keyup', (e) => { keysDown.delete(e.code); });
   window.addEventListener('blur', () => { keysDown.clear(); for (const k in touchState) touchState[k] = false; });
   document.addEventListener('visibilitychange', () => { if (document.hidden) { keysDown.clear(); for (const k in touchState) touchState[k] = false; } });
 
-  // pointer on canvas (menus, HUD buttons)
+  // Pointer for menus and HUD buttons. It listens on the whole window so taps on the dark
+  // bars beside the canvas still count (clamped to the nearest edge). A mouse clicks on press;
+  // a finger "clicks" on release, and only if it didn't drag, so lists can be swiped.
+  const DRAG_PX = 10;
   function toLogical(e) {
     const r = canvas.getBoundingClientRect();
-    return { x: ((e.clientX - r.left) / r.width) * VW, y: ((e.clientY - r.top) / r.height) * VH };
+    if (!r.width || !r.height) return { x: pointer.x, y: pointer.y };
+    return { x: clamp(((e.clientX - r.left) / r.width) * VW, 0, VW - 1), y: clamp(((e.clientY - r.top) / r.height) * VH, 0, VH - 1) };
   }
-  canvas.addEventListener('pointermove', (e) => {
+  const onPad = (e) => e.target && e.target.closest && e.target.closest('#touch');
+  window.addEventListener('pointermove', (e) => {
+    if (downId !== null && e.pointerId !== downId) return;
     const p = toLogical(e); pointer.x = p.x; pointer.y = p.y; pointer.moved = true;
     if (e.pointerType === 'mouse') pointer.active = true;
+    if (downId === null) return;
+    if (!pointer.drag && Math.hypot(e.clientX - downCX, e.clientY - downCY) > DRAG_PX) pointer.drag = true;
+    if (pointer.drag) { accDX += p.x - lastX; accDY += p.y - lastY; }
+    lastX = p.x; lastY = p.y;
   });
-  canvas.addEventListener('pointerdown', (e) => {
+  window.addEventListener('pointerdown', (e) => {
+    if (onPad(e) || downId !== null) return;
     const p = toLogical(e); pointer.x = p.x; pointer.y = p.y;
-    pointer.down = true; clickLatch = true; anyLatch = true;
+    downId = e.pointerId; downCX = e.clientX; downCY = e.clientY; downX = lastX = p.x; downY = lastY = p.y;
+    pointer.down = true; pointer.drag = false; suppressUp = false; anyLatch = true;
     pointer.active = true;
-    if (e.pointerType === 'touch') device = 'touch';
+    if (e.pointerType === 'mouse') clickLatch = true;
+    else device = 'touch';
     if (onAnyInput) onAnyInput();
   });
-  window.addEventListener('pointerup', () => { pointer.down = false; });
-  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+  const endPointer = (e, cancelled) => {
+    if (e.pointerId !== downId) return;
+    downId = null; pointer.down = false;
+    if (pointer.drag) swipeLatch = { dx: pointer.x - downX, dy: pointer.y - downY };
+    else if (e.pointerType !== 'mouse' && !suppressUp && !cancelled) clickLatch = true;
+    pointer.drag = false;
+  };
+  window.addEventListener('pointerup', (e) => endPointer(e, false));
+  window.addEventListener('pointercancel', (e) => endPointer(e, true));
+  window.addEventListener('contextmenu', (e) => e.preventDefault());
 
   // On-screen controls. Rather than demanding exact button hits, the screen is split into
   // forgiving zones: the left 45% is movement (left/right decided by which side of the gap
   // between the two arrows the thumb is on, so it can rock or slide between them), and the
-  // whole lower right is JUMP except the POWER button. Every touch is re-evaluated on every
-  // event, so multi-touch and sliding fingers just work.
+  // whole lower right is JUMP except the power button (only for climbers whose power needs
+  // one). There is no DOWN button: sliding the movement thumb down from where it landed holds
+  // DOWN (crouch / look down, and with JUMP drops through planks). Every touch is re-evaluated
+  // on every event, so multi-touch and sliding fingers just work.
   const TOUCH_ACTS = ['left', 'right', 'down', 'jump', 'action', 'pause'];
+  const PULL_PX = 30;
   function bindTouchPad(root) {
     if (!root) return;
     const el = (id) => document.getElementById(id);
     const btn = { left: el('b-left'), right: el('b-right'), down: el('b-down'), jump: el('b-jump'), action: el('b-act'), pause: el('b-pause') };
     const box = (e, pad = 0) => { const r = e.getBoundingClientRect(); return { l: r.left - pad, t: r.top - pad, r: r.right + pad, b: r.bottom + pad }; };
     const inside = (x, y, R) => x >= R.l && x <= R.r && y >= R.t && y <= R.b;
+    const startY = new Map();   // touch id -> where that finger landed
     const recompute = (e) => {
       if (e.cancelable) e.preventDefault();
+      if (e.type === 'touchstart') for (const t of e.changedTouches) startY.set(t.identifier, t.clientY);
+      else if (e.type === 'touchend' || e.type === 'touchcancel') for (const t of e.changedTouches) startY.delete(t.identifier);
       const W = window.innerWidth, H = window.innerHeight;
-      const L = box(btn.left), R = box(btn.right), D = box(btn.down, 8), A = box(btn.action, 12), Pz = box(btn.pause, 12);
+      const L = box(btn.left), R = box(btn.right), A = box(btn.action, 12), Pz = box(btn.pause, 12);
       const mid = (L.r + R.l) / 2;
-      const hasPower = btn.action.style.visibility !== 'hidden';
+      const hasPower = btn.action.classList.contains('show');
       const next = {};
       for (const t of e.touches) {
         const x = t.clientX, y = t.clientY;
         if (inside(x, y, Pz)) { next.pause = true; continue; }
         if (x < W * 0.45) {
-          if (y < H * 0.28) continue;
-          if (inside(x, y, D)) next.down = true;
-          else if (x < mid) next.left = true;
-          else next.right = true;
+          const y0 = startY.has(t.identifier) ? startY.get(t.identifier) : y;
+          if (y0 < H * 0.28) continue;
+          if (x < mid) next.left = true; else next.right = true;
+          if (y - y0 > PULL_PX) next.down = true;
         } else if (y > H * 0.24) {
           if (hasPower && inside(x, y, A)) next.action = true;
           else next.jump = true;
@@ -207,7 +238,7 @@ const Input = (() => {
       for (const a of TOUCH_ACTS) {
         if (next[a] && !touchState[a]) {
           touchLatch.add(a);
-          if ((a === 'jump' || a === 'action') && Save.data.settings.vibrate && navigator.vibrate) { try { navigator.vibrate(10); } catch (err) { /* unsupported */ } }
+          if ((a === 'jump' || a === 'action') && Save.data.settings.vibrate) buzz(10);
         }
         touchState[a] = !!next[a];
         if (btn[a]) btn[a].classList.toggle('on', !!next[a]);
@@ -256,10 +287,17 @@ const Input = (() => {
     }
     keyLatch.clear(); touchLatch.clear();
     pointer.clicked = clickLatch; clickLatch = false;
+    pointer.swipe = swipeLatch; swipeLatch = null;
+    pointer.fdx = accDX; pointer.fdy = accDY; accDX = accDY = 0;
   }
 
   function consume(a) { pressed[a] = false; }
-  function clearAll() { for (const a of ACTIONS) { pressed[a] = false; } pointer.clicked = false; anyPressed = false; }
+  // a finger still down when the screen changes must not "click" the next screen on release
+  function clearAll() {
+    for (const a of ACTIONS) { pressed[a] = false; }
+    pointer.clicked = false; pointer.swipe = null; anyPressed = false;
+    if (pointer.down) suppressUp = true;
+  }
 
   return {
     poll, consume, clearAll, bindTouchPad, releaseTouches, pointer,
@@ -271,10 +309,19 @@ const Input = (() => {
   };
 })();
 
+// Short vibration on supporting devices (silently ignored elsewhere)
+function buzz(ms) { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) { /* unsupported */ } }
+
 // Human-readable control names for the current input device
 function keyName(action) {
   const d = Input.device;
-  if (d === 'pad') return { jump: 'A', action: 'X', pause: 'START', confirm: 'A', back: 'B', retry: 'SELECT', down: 'DOWN' }[action] || action.toUpperCase();
-  if (d === 'touch') return { jump: 'JUMP', action: 'POWER', pause: 'II', confirm: 'TAP', back: 'BACK', retry: 'RETRY', down: 'DOWN' }[action] || action.toUpperCase();
-  return { jump: 'SPACE', action: 'X', pause: 'ESC', confirm: 'ENTER', back: 'ESC', retry: 'R', down: 'DOWN' }[action] || action.toUpperCase();
+  if (d === 'pad') return { jump: 'A', action: 'X', pause: 'START', confirm: 'A', back: 'B', retry: 'SELECT', down: 'DOWN', drop: 'HOLD DOWN AND PRESS A' }[action] || action.toUpperCase();
+  if (d === 'touch') return { jump: '▲', action: powerButtonLabel() || 'POWER', pause: 'II', confirm: 'TAP', back: 'BACK', retry: 'RETRY', down: 'DOWN', drop: 'SLIDE YOUR ◀ ▶ THUMB DOWN AND TAP ▲' }[action] || action.toUpperCase();
+  return { jump: 'SPACE', action: 'X', pause: 'ESC', confirm: 'ENTER', back: 'ESC', retry: 'R', down: 'DOWN', drop: 'HOLD DOWN AND PRESS SPACE' }[action] || action.toUpperCase();
+}
+const touchUI = () => Input.device === 'touch';
+// the on-screen power button only exists for climbers whose power is a button press
+function powerButtonLabel(id) {
+  const c = charById(id || (typeof player !== 'undefined' && player.char ? player.char.id : Save.data.char));
+  return { dash: 'DASH', slam: 'SLAM', all: 'DASH' }[c.ability] || null;
 }

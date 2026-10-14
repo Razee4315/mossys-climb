@@ -53,13 +53,16 @@
     font: 700 calc(20px * var(--s))/1 system-ui, sans-serif; pointer-events: none;
     transition: transform 0.06s, background 0.06s, border-color 0.06s;
   }
+  #b-act.show { display: flex; }
   .tb.on { background: rgba(255, 216, 74, 0.42); border-color: #ffd84a; transform: scale(0.92); }
   .tb small { font-size: calc(10px * var(--s)); letter-spacing: 1px; font-weight: 800; }
   #b-left  { --d: 76px; left: calc(16px + env(safe-area-inset-left)); bottom: calc(20px + env(safe-area-inset-bottom)); }
   #b-right { --d: 76px; left: calc(16px + 84px * var(--s) + env(safe-area-inset-left)); bottom: calc(20px + env(safe-area-inset-bottom)); }
-  #b-down  { --d: 52px; left: calc(16px + 50px * var(--s) + env(safe-area-inset-left)); bottom: calc(26px + 80px * var(--s) + env(safe-area-inset-bottom)); }
+  /* not a button: lights up while the movement thumb is slid down (crouch / drop through) */
+  #b-down  { --d: 34px; left: calc(16px + 59px * var(--s) + env(safe-area-inset-left)); bottom: calc(26px + 80px * var(--s) + env(safe-area-inset-bottom)); opacity: 0; font-size: calc(14px * var(--s)); }
+  #b-down.on { opacity: 1; transform: none; }
   #b-jump  { --d: 92px; right: calc(18px + env(safe-area-inset-right)); bottom: calc(22px + env(safe-area-inset-bottom)); }
-  #b-act   { --d: 66px; right: calc(18px + 100px * var(--s) + env(safe-area-inset-right)); bottom: calc(16px + env(safe-area-inset-bottom)); }
+  #b-act   { display: none; --d: 66px; right: calc(18px + 100px * var(--s) + env(safe-area-inset-right)); bottom: calc(16px + env(safe-area-inset-bottom)); }
   #b-pause {
     position: absolute; pointer-events: auto; touch-action: none; display: flex; align-items: center; justify-content: center;
     top: calc(8px + env(safe-area-inset-top)); right: calc(10px + env(safe-area-inset-right));
@@ -90,7 +93,7 @@
   <div class="tb" id="b-left">&#9664;</div>
   <div class="tb" id="b-right">&#9654;</div>
   <div class="tb" id="b-down">&#9660;</div>
-  <div class="tb" id="b-act"><small>POWER</small></div>
+  <div class="tb" id="b-act"><small id="b-act-label">POWER</small></div>
   <div class="tb" id="b-jump">&#9650;</div>
   <div id="b-pause">&#10073;&#10073;</div>
 </div>
