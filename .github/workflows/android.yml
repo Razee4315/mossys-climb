@@ -1,0 +1,207 @@
+name: Android APK
+
+# push to main -> bump patch version -> build a release APK (arm64) -> GitHub Release
+# pull requests -> build only (catches Android breakage before merge)
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ─── Version check + bump (cheap runner) ─────────────────────────────
+  version:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.bump.outputs.release }}
+      version: ${{ steps.bump.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bump version if there are new commits since the last release
+        id: bump
+        shell: bash
+        run: |
+          set -uo pipefail
+          CUR=$(jq -r '.version' src-tauri/tauri.conf.json)
+          echo "Current version: $CUR"
+          if git rev-parse -q --verify "refs/tags/v$CUR" >/dev/null; then
+            COUNT=$(git rev-list "v$CUR"..HEAD --count)
+            echo "Commits since v$CUR: $COUNT"
+            if [ "$COUNT" -eq 0 ]; then
+              echo "Nothing new since v$CUR - skipping release"
+              echo "release=false" >> "$GITHUB_OUTPUT"
+              echo "version=$CUR" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            IFS='.' read -r MA MI PA <<< "$CUR"
+            NEW="$MA.$MI.$((PA + 1))"
+            echo "Bumping $CUR -> $NEW"
+            jq --arg v "$NEW" '.version = $v' src-tauri/tauri.conf.json > tmp.json && mv tmp.json src-tauri/tauri.conf.json
+            jq --arg v "$NEW" '.version = $v' package.json > tmp.json && mv tmp.json package.json
+            sed -i "s/^version = \"$CUR\"/version = \"$NEW\"/" src-tauri/Cargo.toml
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add src-tauri/tauri.conf.json package.json src-tauri/Cargo.toml
+            git commit -m "chore: bump version to $NEW [skip ci]"
+            git push
+            echo "version=$NEW" >> "$GITHUB_OUTPUT"
+          else
+            echo "No tag for v$CUR yet - first release"
+            echo "version=$CUR" >> "$GITHUB_OUTPUT"
+          fi
+          echo "release=true" >> "$GITHUB_OUTPUT"
+
+  # ─── Build the APK ───────────────────────────────────────────────────
+  build:
+    needs: version
+    if: always() && (needs.version.result == 'success' || needs.version.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      HAS_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_B64 != '' }}
+    steps:
+      - name: Checkout (latest main, including the version bump)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.sha || 'main' }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Rust (Android arm64 target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Gradle cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      # one signing key across runs, so test builds upgrade over each other
+      - name: Debug keystore cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: mossys-climb-android-debug-keystore
+
+      - name: Install JS tooling
+        run: npm ci
+
+      - name: Use the runner's preinstalled NDK
+        shell: bash
+        run: |
+          NDK=$(ls -d "$ANDROID_HOME"/ndk/*/ 2>/dev/null | sort -V | tail -1 || true)
+          if [ -z "$NDK" ]; then echo "No NDK found under $ANDROID_HOME/ndk"; exit 1; fi
+          echo "NDK_HOME=${NDK%/}" >> "$GITHUB_ENV"
+          echo "Using NDK ${NDK%/}"
+
+      - name: Build the game page
+        run: node tools/build.js
+
+      - name: Generate app icons
+        run: npx tauri icon app-icon.png
+
+      - name: Initialise the Android project
+        run: npx tauri android init --ci
+
+      - name: Patch the Android project (signing, icons, immersive, landscape)
+        run: node tools/android/patch-android.mjs
+
+      - name: Release keystore (only if the secret is configured)
+        if: env.HAS_KEYSTORE == 'true'
+        shell: bash
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          echo "$KS_B64" | base64 -d > src-tauri/gen/android/release.keystore
+          {
+            echo "storeFile=$PWD/src-tauri/gen/android/release.keystore"
+            echo "storePassword=$KS_PASS"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=$KEY_PASS"
+          } > src-tauri/gen/android/keystore.properties
+
+      - name: Build release APK (arm64)
+        run: npx tauri android build --apk --target aarch64
+
+      - name: Collect the APK
+        shell: bash
+        run: |
+          set -uo pipefail
+          V=$(jq -r '.version' src-tauri/tauri.conf.json)
+          APK=$(find src-tauri/gen/android/app/build/outputs -name '*.apk' 2>/dev/null | grep -i release | head -1 || true)
+          if [ -z "$APK" ]; then
+            echo "No release APK found. Outputs:"; find src-tauri/gen/android/app/build/outputs || true
+            exit 1
+          fi
+          SUFFIX=$([ "$HAS_KEYSTORE" = "true" ] && echo "" || echo "-testkey")
+          mkdir -p out
+          cp "$APK" "out/MossysClimb-v$V-android-arm64$SUFFIX.apk"
+          ls -la out
+          echo "VERSION=$V" >> "$GITHUB_ENV"
+          echo "SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MossysClimb-android-v${{ env.VERSION }}
+          path: out/*.apk
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: github.event_name != 'pull_request' && needs.version.outputs.release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION }}
+          target_commitish: ${{ env.SHA }}
+          name: Mossy's Climb v${{ env.VERSION }}
+          files: out/*.apk
+          body: |
+            ## Mossy's Climb v${{ env.VERSION }}
+
+            A pixel-art platformer about climbing a very tall mountain.
+
+            ### Install on Android
+            1. Download the `.apk` below on your phone (Android 7.0 or newer, 64-bit).
+            2. Open it and allow "install unknown apps" for your browser when asked.
+            3. Play sideways. Back button = pause.
+
+            Builds named `-testkey` are signed with the CI test key. They upgrade over each other,
+            but a future build signed with a permanent release key will need one uninstall first.
+
+            Prefer the browser? Play instantly on the web: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+          draft: false
+          prerelease: false

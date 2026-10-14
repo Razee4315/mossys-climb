@@ -1,0 +1,28 @@
+[package]
+name = "mossys-climb"
+version = "1.0.0"
+description = "Mossy's Climb - a pixel-art platformer"
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+# Android loads the game as a shared library and never runs main()
+name = "mossys_climb_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "mossys-climb"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

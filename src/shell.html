@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0a0812">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="description" content="Mossy's Climb - a pixel-art platformer about climbing a very tall mountain.">
+<title>Mossy's Climb</title>
+<style>
+  html, body {
+    margin: 0; height: 100%; background: #0a0812; overflow: hidden; overscroll-behavior: none;
+    touch-action: none; user-select: none; -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none;
+  }
+  body { display: flex; align-items: center; justify-content: center; }
+  #game {
+    display: block; background: #000; outline: none;
+    image-rendering: pixelated; image-rendering: crisp-edges;
+  }
+  @media (pointer: fine) { #game { box-shadow: 0 0 0 1px #1e1a30, 0 20px 60px rgba(0, 0, 0, 0.6); } }
+
+  /* ---------- loading screen ---------- */
+  #loader {
+    position: fixed; inset: 0; z-index: 20; background: #0a0812;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3vmin;
+    transition: opacity 0.45s ease;
+  }
+  #loader.done { opacity: 0; pointer-events: none; }
+  #loader svg { image-rendering: pixelated; display: block; }
+  #ld-logo { width: min(70vw, 92vmin); height: auto; }
+  #ld-frog { width: 14vmin; height: auto; animation: hop 0.7s ease-in-out infinite; }
+  @keyframes hop { 0%, 100% { transform: translateY(0) scale(1.06, 0.94); } 45% { transform: translateY(-3.5vmin) scale(0.94, 1.06); } }
+  #ld-shadow { width: 10vmin; height: 1.4vmin; border-radius: 50%; background: rgba(0, 0, 0, 0.45); margin-top: -3vmin; animation: shadow 0.7s ease-in-out infinite; }
+  @keyframes shadow { 0%, 100% { transform: scaleX(1); } 45% { transform: scaleX(0.6); opacity: 0.5; } }
+  #ld-bar { width: min(56vw, 70vmin); height: 2.2vmin; min-height: 8px; border: 0.5vmin solid #ffd84a; padding: 0.4vmin; box-sizing: border-box; image-rendering: pixelated; }
+  #ld-bar i { display: block; height: 100%; width: 4%; background: repeating-linear-gradient(90deg, #7ad85a 0 6px, #5cc24a 6px 12px); transition: width 0.25s ease; }
+  #ld-msg { color: #a8a0c0; font: 700 clamp(11px, 2.6vmin, 18px)/1 ui-monospace, Menlo, Consolas, monospace; letter-spacing: 0.15em; text-transform: uppercase; }
+
+  /* ---------- touch controls ---------- */
+  #touch { position: fixed; inset: 0; pointer-events: none; display: none; z-index: 5; --s: 1; }
+  #touch.show { display: block; }
+  .zone { position: absolute; pointer-events: auto; touch-action: none; }
+  #z-move { left: 0; bottom: 0; width: 45%; height: 72%; }
+  #z-jump { right: 0; bottom: 0; width: 55%; height: 76%; }
+  .tb {
+    position: absolute; display: flex; align-items: center; justify-content: center;
+    width: calc(var(--d) * var(--s)); height: calc(var(--d) * var(--s)); border-radius: 50%;
+    color: rgba(255, 255, 255, 0.92); background: rgba(16, 12, 30, 0.38);
+    border: 2px solid rgba(255, 255, 255, 0.32); box-sizing: border-box;
+    font: 700 calc(20px * var(--s))/1 system-ui, sans-serif; pointer-events: none;
+    transition: transform 0.06s, background 0.06s, border-color 0.06s;
+  }
+  .tb.on { background: rgba(255, 216, 74, 0.42); border-color: #ffd84a; transform: scale(0.92); }
+  .tb small { font-size: calc(10px * var(--s)); letter-spacing: 1px; font-weight: 800; }
+  #b-left  { --d: 76px; left: calc(16px + env(safe-area-inset-left)); bottom: calc(20px + env(safe-area-inset-bottom)); }
+  #b-right { --d: 76px; left: calc(16px + 84px * var(--s) + env(safe-area-inset-left)); bottom: calc(20px + env(safe-area-inset-bottom)); }
+  #b-down  { --d: 52px; left: calc(16px + 50px * var(--s) + env(safe-area-inset-left)); bottom: calc(26px + 80px * var(--s) + env(safe-area-inset-bottom)); }
+  #b-jump  { --d: 92px; right: calc(18px + env(safe-area-inset-right)); bottom: calc(22px + env(safe-area-inset-bottom)); }
+  #b-act   { --d: 66px; right: calc(18px + 100px * var(--s) + env(safe-area-inset-right)); bottom: calc(16px + env(safe-area-inset-bottom)); }
+  #b-pause {
+    position: absolute; pointer-events: auto; touch-action: none; display: flex; align-items: center; justify-content: center;
+    top: calc(8px + env(safe-area-inset-top)); right: calc(10px + env(safe-area-inset-right));
+    width: 46px; height: 46px; border-radius: 12px; color: #fff; font: 800 16px/1 system-ui, sans-serif;
+    background: rgba(16, 12, 30, 0.45); border: 2px solid rgba(255, 255, 255, 0.3); box-sizing: border-box;
+  }
+  #b-pause.on { background: rgba(255, 216, 74, 0.45); }
+
+  #rotate {
+    display: none; position: fixed; inset: 0; z-index: 30; background: #0a0812; color: #ffd84a;
+    font: 700 18px/1.4 system-ui, sans-serif; text-align: center; align-items: center; justify-content: center; padding: 24px;
+  }
+  @media (orientation: portrait) and (pointer: coarse) { #rotate { display: flex; } }
+</style>
+</head>
+<body>
+<div id="loader" role="progressbar" aria-label="Loading Mossy's Climb">
+  <!-- LOADER_LOGO -->
+  <!-- LOADER_FROG -->
+  <div id="ld-shadow"></div>
+  <div id="ld-bar"><i id="ld-fill"></i></div>
+  <div id="ld-msg">Loading</div>
+</div>
+<canvas id="game" width="384" height="216" tabindex="0" aria-label="Mossy's Climb game"></canvas>
+<div id="touch" aria-hidden="true">
+  <div class="zone" id="z-move"></div>
+  <div class="zone" id="z-jump"></div>
+  <div class="tb" id="b-left">&#9664;</div>
+  <div class="tb" id="b-right">&#9654;</div>
+  <div class="tb" id="b-down">&#9660;</div>
+  <div class="tb" id="b-act"><small>POWER</small></div>
+  <div class="tb" id="b-jump">&#9650;</div>
+  <div id="b-pause">&#10073;&#10073;</div>
+</div>
+<div id="rotate">Turn your device sideways to climb! &#8635;</div>
+<noscript><p style="color:#fff;font-family:sans-serif">Mossy's Climb needs JavaScript enabled.</p></noscript>
+<!-- SCRIPTS -->
+</body>
+</html>

@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/capabilities.json",
+  "identifier": "main-capability",
+  "description": "The game window. core:default includes app listeners (used for the Android back button); allow-exit lets the title screen quit on a double back-press.",
+  "windows": ["main"],
+  "permissions": ["core:default", "core:app:allow-exit"]
+}
