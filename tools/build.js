@@ -5,7 +5,7 @@ const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
 const SRC = path.join(ROOT, 'src');
-const ORDER = ['core', 'font', 'audio', 'art', 'themes', 'levels', 'world', 'player', 'enemies', 'game', 'ui', 'opening'];
+const ORDER = ['core', 'font', 'audio', 'art', 'themes', 'levels', 'world', 'hazards', 'powerups', 'player', 'enemies', 'game', 'ui', 'opening'];
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
 
 // ---- pixel art -> SVG (merged horizontal runs, crisp edges) ----

@@ -9,7 +9,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const ORDER = ['core', 'font', 'audio', 'art', 'themes', 'levels', 'world', 'player', 'enemies', 'game', 'ui', 'opening'];
+const ORDER = ['core', 'font', 'audio', 'art', 'themes', 'levels', 'world', 'hazards', 'powerups', 'player', 'enemies', 'game', 'ui', 'opening'];
 const SRC = path.join(__dirname, '..', 'src');
 
 function fakeCtx(canvas) {

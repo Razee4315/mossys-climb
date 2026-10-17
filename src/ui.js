@@ -132,7 +132,7 @@ const MenuBG = {
 //  Title
 // ---------------------------------------------------------------------
 const TitleScreen = {
-  started: false, t: 0, hops: [0, 0, 0, 0], hopV: [0, 0, 0, 0],
+  started: false, t: 0, hops: [0, 0, 0, 0, 0, 0, 0], hopV: [0, 0, 0, 0, 0, 0, 0],
   enter() {
     this.t = 0;
     this.menu = new Menu([
@@ -157,7 +157,7 @@ const TitleScreen = {
       this.exitT = 2; Sound.sfx('back');
     }
     this.menu.update(dt);
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < this.hops.length; i++) {
       this.hopV[i] += 700 * dt; this.hops[i] += this.hopV[i] * dt;
       if (this.hops[i] >= 0) { this.hops[i] = 0; this.hopV[i] = Math.random() < 0.012 ? -rand(140, 200) : 0; }
     }
@@ -165,11 +165,13 @@ const TitleScreen = {
   render() {
     MenuBG.draw(STEP);
     // characters on the grass
-    CHARACTERS.slice(0, 4).forEach((c, i) => {
+    // the climbers you have met so far, hopping about on the grass
+    CHARACTERS.filter((c) => charUnlocked(c)).forEach((c, i) => {
       const F = ART.chars[c.id];
       const s = this.hops[i] < 0 ? F.jump : F.idle[Math.floor(this.t * 2 + i) % 2];
-      const x = 46 + i * 30;
-      ctx.drawImage(i % 2 ? s.c : s.c, x, VH - 20 - 18 + Math.round(this.hops[i]));
+      const x = i < 4 ? 30 + i * 26 : VW - 40 - (i - 4) * 26;
+      ctx.fillStyle = 'rgba(10,6,18,0.25)'; ctx.fillRect(x + 4, VH - 21, 10, 2);
+      ctx.drawImage(i >= 4 ? s.f : s.c, x, VH - 20 - 18 + Math.round(this.hops[i]));
     });
     const sel = ART.chars[Save.data.char] || ART.chars.mossy;
     // logo
@@ -274,12 +276,12 @@ function drawMountain(dark) {
 // ---------------------------------------------------------------------
 //  Level map — a mountain you climb, one world per altitude band
 // ---------------------------------------------------------------------
-const MAP_H = 640;
+const MAP_H = 780;
 // nodes zig-zag up the mountain (same shape formula as buildMapArt)
 const mapShape = (y) => { const k = (y - 40) / (MAP_H - 40); return { half: 18 + k * 178 + Math.sin(y * 0.045) * 9 + Math.sin(y * 0.17) * 3, cx: VW / 2 + 6 + Math.sin(y * 0.012) * 14 }; };
-const MAP_NODES = [588, 520, 452, 384, 316, 248, 176, 96].map((y, i) => {
+const MAP_NODES = [728, 662, 596, 530, 464, 398, 332, 266, 186, 96].map((y, i, all) => {
   const m = mapShape(y);
-  return [Math.round(m.cx + (i === 7 ? 0 : (i % 2 ? 1 : -1)) * Math.min(m.half * 0.45, 110)), y];
+  return [Math.round(m.cx + (i === all.length - 1 ? 0 : (i % 2 ? 1 : -1)) * Math.min(m.half * 0.45, 110)), y];
 });
 const MapScreen = {
   canvas: null,
@@ -417,7 +419,7 @@ const MapScreen = {
     else Font.draw('SWIPE TO LOOK AROUND   TAP A LEVEL TO PICK IT', VW / 2, 17, { color: '#e8e0ff', align: 'center', outline: true, alpha: 0.85 });
   },
 };
-const THEME_COL = { meadow: '#7ad85a', forest: '#3fbf7a', cave: '#a08aff', magma: '#ff7a3a', ruins: '#e8c070', ice: '#8ad4ff', storm: '#8a9aff', summit: '#ffd84a' };
+const THEME_COL = { meadow: '#7ad85a', forest: '#3fbf7a', cave: '#a08aff', sawmill: '#ffa84a', magma: '#ff7a3a', ruins: '#e8c070', ice: '#8ad4ff', clouds: '#ffb0e0', storm: '#8a9aff', summit: '#ffd84a' };
 const _gemTotals = {};
 function parseLevelGemTotal(i) {
   if (_gemTotals[i] == null) _gemTotals[i] = LEVELS[i].map.join('').split('').filter((c) => c === '*' || c === 'M').length;
@@ -426,9 +428,11 @@ function parseLevelGemTotal(i) {
 
 function buildMapArt() {
   const B = PixBuf(VW, MAP_H);
+  // one altitude band per world, from the meadow at the foot to the summit
   const bands = [
-    [560, '#5cc24a', '#4aa83e'], [490, '#2f8a4a', '#287a40'], [420, '#5a5278', '#4a4466'], [350, '#5a3a3a', '#4a2e30'],
-    [280, '#c9a66b', '#b08e58'], [200, '#e8f2ff', '#c8daf0'], [120, '#5a6280', '#4a5270'], [0, '#3a3e60', '#2e3250'],
+    [696, '#5cc24a', '#4aa83e', 'tree'], [630, '#2f8a4a', '#287a40', 'pine'], [564, '#5a5278', '#4a4466', 'glow'], [498, '#b07a40', '#966434', 'mill'],
+    [432, '#5a3a3a', '#4a2e30', 'lava'], [366, '#c9a66b', '#b08e58', 'ruin'], [300, '#e8f2ff', '#c8daf0', 'snow'], [226, '#f4e4ff', '#dccaf4', 'cloud'],
+    [140, '#5a6280', '#4a5270', 'tower'], [0, '#3a3e60', '#2e3250', 'none'],
   ];
   const edges = [];
   for (let y = 40; y < MAP_H; y++) {
@@ -459,18 +463,25 @@ function buildMapArt() {
   for (let i = 0; i < 260; i++) {
     const x = Math.floor(rng() * VW), y = 60 + Math.floor(rng() * (MAP_H - 70));
     if (!inside(x, y) || !inside(x + 6, y)) continue;
-    if (y >= 490) { // trees
-      const c = y >= 560 ? '#3a9a44' : '#1f6a3a';
+    const kind = bands.find((b) => y >= b[0])[3];
+    if (kind === 'tree' || kind === 'pine') {
+      const c = kind === 'tree' ? '#3a9a44' : '#1f6a3a';
       B.rect(x + 2, y, 1, 3, '#5a3a20'); B.rect(x + 1, y - 3, 3, 3, c); B.put(x + 2, y - 4, c);
-    } else if (y >= 420) { // glowing mushrooms
+    } else if (kind === 'glow') {
       if (rng() < 0.4) { B.put(x, y, '#5af0ff'); B.put(x, y + 1, '#c8f0ff'); }
-    } else if (y >= 350) { // lava cracks
+    } else if (kind === 'mill') {
+      if (rng() < 0.5) { B.rect(x + 1, y - 3, 3, 3, '#c8602a'); B.put(x + 2, y - 4, '#ffa84a'); B.put(x + 2, y, '#5a3a20'); }
+      else if (rng() < 0.2) { B.rect(x, y - 3, 6, 3, '#6a3a20'); B.rect(x + 1, y - 5, 4, 2, '#8a4a28'); }
+    } else if (kind === 'lava') {
       if (rng() < 0.5) { B.rect(x, y, 3, 1, '#ff7a1a'); B.put(x + 1, y - 1, '#ffd25a'); }
-    } else if (y >= 280) { // ruins
+    } else if (kind === 'ruin') {
       if (rng() < 0.4) { B.rect(x, y - 4, 2, 5, '#a07c46'); B.rect(x - 1, y - 5, 4, 1, '#e4c58c'); }
-    } else if (y >= 200) { // snowy pines
+    } else if (kind === 'snow') {
       B.rect(x + 1, y - 3, 3, 3, '#3a5a7a'); B.put(x + 2, y - 4, '#ffffff'); B.put(x + 2, y, '#5a3a20');
-    } else if (y >= 120) { // storm towers
+    } else if (kind === 'cloud') {
+      if (rng() < 0.5) { B.rect(x, y - 1, 5, 2, '#ffffff'); B.rect(x + 1, y - 2, 2, 1, '#ffffff'); B.put(x + 4, y, '#c8d0f0'); }
+      else if (rng() < 0.3) { B.put(x, y, '#ff7aa8'); B.put(x + 2, y, '#ffd84a'); }
+    } else if (kind === 'tower') {
       if (rng() < 0.3) { B.rect(x, y - 7, 3, 8, '#2a3048'); B.put(x + 1, y - 5, '#ffd84a'); }
     }
   }
@@ -486,7 +497,7 @@ const CharScreen = {
     this.i = Math.max(0, CHARACTERS.findIndex((c) => c.id === Save.data.char));
     this.t = 0; this.slide = 0;
   },
-  unlocked(c) { return !c.secret || Save.data.secret; },
+  unlocked(c) { return charUnlocked(c); },
   update(dt) {
     this.t += dt; this.slide = approach(this.slide, 0, dt * 6);
     const I = Input.pressed, n = CHARACTERS.length;
@@ -541,7 +552,7 @@ const CharScreen = {
     const x = 162;
     panel(x - 8, 54, 196, 112, open ? '#ffd84a' : '#5a5470');
     Font.draw(open ? c.name : '???', x, 61, { color: open ? '#ffffff' : '#6a6080', outline: true, scale: 2 });
-    Font.draw(open ? c.species : 'SECRET CLIMBER', x, 79, { color: '#a8a0c0' });
+    Font.draw(open ? c.species : c.secret ? 'SECRET CLIMBER' : 'LOCKED CLIMBER', x, 79, { color: '#a8a0c0' });
     if (open) {
       const bars = [['SPEED', c.stats.speed], ['JUMP', c.stats.jump], ['WALLS', c.stats.wall], ['HEARTS', c.stats.tough]];
       bars.forEach(([k, v], i) => {
@@ -552,8 +563,10 @@ const CharScreen = {
       const power = c.power.replace(/\{(\w+)\}/g, (_, k) => (k === 'action' && touchUI() ? powerButtonLabel(c.id) : keyName(k)));
       const lines = Font.wrap(power, 180);
       lines.forEach((l, i) => Font.draw(l, x, 134 + i * 9, { color: '#7aff9a' }));
-    } else {
+    } else if (c.secret) {
       Font.draw('REACH THE SUMMIT AND\nDEFEAT STORMBEAK TO\nUNLOCK THIS CLIMBER.', x, 96, { color: '#a8a0c0' });
+    } else {
+      Font.draw(`CLEAR LEVEL ${c.unlockAt + 1}:\n${LEVELS[c.unlockAt].name}\nTO UNLOCK THIS CLIMBER.`, x, 96, { color: '#a8a0c0' });
     }
     Font.draw(open ? `"${c.tagline}"` : '', VW / 2, 172, { color: '#fff4c0', align: 'center', outline: true });
     button('◀ BACK', 8, VH - 22, 52, () => Screens.go(this.back));
@@ -663,8 +676,8 @@ const HowToScreen = {
         'STOMP ENEMIES - BUT NEVER STOMP A SPIKY ONE.',
         'SPIKES AND PITS COST 1 ♥ AND SEND YOU BACK.',
         'CHECKPOINT FLAGS SAVE YOUR SPOT AND REFILL ♥.',
-        'GEMS THAT RUN AWAY CAN BE CAUGHT. GO GET THEM!',
-        'CRACKED GROUND MAY NOT HOLD YOUR WEIGHT...',
+        'GLOWING ORBS GRANT POWERS: STAR, SHIELD, WINGS, MAGNET.',
+        'CHAIN STOMPS WITHOUT LANDING FOR A COMBO!',
         'THE MOUNTAIN IS FULL OF SURPRISES. STAY SHARP!',
       ];
       tips.forEach((t, i) => Font.draw('★ ' + t, 28, 42 + i * 17, { color: i % 2 ? '#fff4c0' : '#ffffff' }));
@@ -697,8 +710,8 @@ const HowToScreen = {
     Font.draw('SLIDE DOWN: CROUCH', x0 + 8, y0 + 56, { color: '#c8c0d8' });
     Font.draw('JUMP: TAP ANYWHERE', x0 + w - 8, y0 + 30, { color: '#ffd84a', align: 'right' });
     Font.draw('HOLD FOR HIGHER', x0 + w - 8, y0 + 40, { color: '#c8c0d8', align: 'right' });
-    Font.draw('P = DASH OR SLAM', x0 + w - 8, y0 + 52, { color: '#ff9a6a', align: 'right' });
-    Font.draw('(EMBER AND BRUNO)', x0 + w - 8, y0 + 62, { color: '#c8c0d8', align: 'right' });
+    Font.draw('P = DASH, SLAM OR ROLL', x0 + w - 8, y0 + 52, { color: '#ff9a6a', align: 'right' });
+    Font.draw('(EMBER, BRUNO, QUILL)', x0 + w - 8, y0 + 62, { color: '#c8c0d8', align: 'right' });
     Font.draw('PAUSE', x0 + w - 24, y0 + 8, { color: '#ffffff', align: 'right' });
     Font.draw('DROP THROUGH PLANKS: SLIDE DOWN AND TAP ▲', VW / 2, y0 + h + 8, { color: '#7aff9a', align: 'center' });
     Font.draw('BUTTON SIZE AND VIBRATION ARE IN OPTIONS', VW / 2, y0 + h + 22, { color: '#a8a0c0', align: 'center' });
@@ -789,7 +802,7 @@ const ClearScreen = {
       Font.draw('★', x, y0 + 100 - (sc - 1) * 6, { color: on ? '#ffd84a' : '#3a3450', align: 'center', outline: true, scale: sc > 1.2 ? 3 : 2 });
       Font.draw(labels[s], x, y0 + 118, { color: on ? '#fff4c0' : '#6a6080', align: 'center' });
     }
-    if (R.unlockedChar && t > 2) Font.draw('NEW CLIMBER UNLOCKED: GOLDEN MOSSY!', VW / 2, y0 + 130, { color: '#ffd84a', align: 'center', outline: true });
+    if (R.unlockedChar && t > 2) Font.draw(`NEW CLIMBER UNLOCKED: ${charById(R.unlockedChar).name}!`, VW / 2, y0 + 130, { color: '#ffd84a', align: 'center', outline: true });
     else if (R.unlockedLevel && t > 2) Font.draw('NEXT LEVEL UNLOCKED - KEEP CLIMBING!', VW / 2, y0 + 130, { color: '#7aff9a', align: 'center', outline: true });
     if (t > 0.6) this.menu.render(VW / 2, y0 + 144, { gap: 13, hitW: 200 });
   },
@@ -817,9 +830,10 @@ const CreditsScreen = {
     ];
     lines.forEach(([k, v], i) => { Font.draw(k, VW / 2 - 110, 60 + i * 13, { color: '#c8c0d8' }); Font.draw(v, VW / 2 + 110, 60 + i * 13, { color: '#ffffff', align: 'right', outline: true }); });
     Font.draw('GOLDEN MOSSY IS NOW PLAYABLE!', VW / 2, 120, { color: '#ffd84a', align: 'center', outline: true });
+    Font.draw('TEN WORLDS CLIMBED. LEGENDARY.', VW / 2, 145, { color: '#ffffff', align: 'center', outline: true });
     Font.draw('CAN YOU COLLECT EVERY GEM AND STAR?', VW / 2, 134, { color: '#fff4c0', align: 'center' });
-    Font.draw('A GAME ABOUT CLIMBING HIGHER.', VW / 2, 156, { color: '#a8a0c0', align: 'center' });
-    CHARACTERS.forEach((c, i) => { const F = ART.chars[c.id]; ctx.drawImage(F.idle[Math.floor(this.t * 2 + i) % 2].c, VW / 2 - 55 + i * 22, 186 - Math.abs(Math.sin(this.t * 4 + i)) * 8); });
+    Font.draw('A GAME ABOUT CLIMBING HIGHER.', VW / 2, 160, { color: '#a8a0c0', align: 'center' });
+    CHARACTERS.forEach((c, i) => { const F = ART.chars[c.id]; ctx.drawImage(F.idle[Math.floor(this.t * 2 + i) % 2].c, VW / 2 - (CHARACTERS.length * 22) / 2 + i * 22, 186 - Math.abs(Math.sin(this.t * 4 + i)) * 8); });
     if (this.t > 1.5 && Math.floor(this.t * 2) % 2) hint(Input.device === 'touch' ? 'TAP TO CONTINUE' : 'PRESS ' + keyName('confirm'));
   },
 };
@@ -967,6 +981,8 @@ function exposeDebug() {
     tap(code, n = 1) { send('keydown', code); this.step(n); send('keyup', code); return this.step(1); },
     hold(code, n) { send('keydown', code); const r = this.step(n); send('keyup', code); return r; },
     tp(tx, ty) { placePlayer(tx * TS + 3, ty * TS + TS - player.h); updateCamera(0, true); return this.step(1); },
+    power(kind) { grantPower(kind); },
+    char(id) { Save.data.char = id; setupPlayer(id); },
   };
 }
 
@@ -981,10 +997,17 @@ const SpriteSheetScreen = {
       if (x + img.width + 4 > VW) { x = 4; y += rowH + 4; rowH = 0; }
       ctx.drawImage(img, x, y); x += img.width + 4; rowH = Math.max(rowH, img.height);
     };
+    if (/sprites=2/.test(location.search)) return this.page2(put);
     for (const id in ART.chars) { const F = ART.chars[id]; [...F.idle, ...F.run, F.jump, F.fall, F.crouch].forEach(put); }
     ['beetle', 'spiny', 'bat', 'plant', 'wasp', 'slime', 'gem', 'mimic', 'spring', 'crusher'].forEach((k) => ART[k].forEach(put));
     [ART.batHang, ART.heart, ART.heartEmpty, ART.sign, ART.rock, ART.seed, ART.feather, ART.dawnGem].forEach(put);
     Object.values(ART.boss).forEach(put);
     ART.boulder.slice(0, 2).forEach(put); ART.clouds.forEach(put);
+  },
+  page2(put) {
+    ['boar', 'bomb', 'bombLit', 'leaper', 'cloudy', 'penguin'].forEach((k) => ART[k].forEach(put));
+    [ART.boarMad, ART.ghost, ART.ghostShy, ART.penguinSlide, ART.cannonball, ...Object.values(ART.power)].forEach(put);
+    ART.saw.forEach(put); ART.sawBig.slice(0, 2).forEach(put);
+    for (const id in ART.chars) [ART.chars[id].blink, ...ART.chars[id].ball.slice(0, 2)].forEach(put);
   },
 };

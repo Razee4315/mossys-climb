@@ -124,6 +124,36 @@ const BODIES = {
     '..aaBBBBBBaa....',
     '...aaaaaaaa.....',
   ],
+  bunny: [
+    '.....Cc...Cc....',
+    '....hAa..hAa....',
+    '....hCa..hCa....',
+    '....hCa..hCa....',
+    '...hAAAAAAAAa...',
+    '..hAAAAAAAAAAa..',
+    '.hAAAAAAAAwkAA..',
+    '.hAAAAAAAAwkAAC.',
+    'hhAAAAAAAAAAAAa.',
+    'hhABBBBBBBAAAa..',
+    '.aABBBBBBBBAa...',
+    '..aABBBBBBBa....',
+    '...aaaaaaaa.....',
+  ],
+  hedgehog: [
+    '....s.s.s.......',
+    '...sSsSsSs......',
+    '..sSSSSSSSSs....',
+    '.sSSSSSSSSAAA...',
+    'sSSSSSSSSAAwkA..',
+    '.SSSSSSSAAAwkAA.',
+    'sSSSSSSSAAAAAAkk',
+    '.SSSSSSSAAAAAAA.',
+    'sSSSSSSBBBBBAa..',
+    '.sSSSSSBBBBBBa..',
+    '..sSSSSBBBBBa...',
+    '...ssSSaBBBa....',
+    '.....aaaaaa.....',
+  ],
 };
 const LEGS = {
   chunky: {
@@ -146,7 +176,7 @@ const CHARACTERS = [
   {
     id: 'mossy', name: 'MOSSY', species: 'TREE FROG', body: 'frog', legs: 'chunky', outline: '#13261b',
     pal: { A: '#5ccf5a', a: '#2f8d47', h: '#a6f27c', B: '#f4ec8e', b: '#cfc25f', w: '#ffffff', k: '#1b1b2e', C: '#ff8fae', c: '#c9507a', L: '#46b452', F: '#2f8d47' },
-    speed: 112, hearts: 3, ability: 'grip',
+    speed: 112, hearts: 3, ability: 'grip', scarf: '#ff4d6d',
     tagline: 'STICKY FINGERS, BRAVE HEART.',
     power: 'WALL GRIP: SLIDES SLOWLY AND KICKS OFF WALLS HIGHER.',
     stats: { speed: 3, jump: 3, wall: 5, tough: 3 },
@@ -154,7 +184,7 @@ const CHARACTERS = [
   {
     id: 'pip', name: 'PIP', species: 'BLUEBIRD', body: 'bird', legs: 'thin', outline: '#101a38',
     pal: { A: '#4aa8ff', a: '#2a5fc0', h: '#a8dcff', B: '#f4f8ff', b: '#c8d4ea', w: '#ffffff', k: '#14182a', C: '#ffb02e', c: '#d06a14', L: '#ffb02e', F: '#d06a14' },
-    speed: 108, hearts: 3, ability: 'double',
+    speed: 108, hearts: 3, ability: 'double', scarf: '#ffd84a',
     tagline: 'TOO SMALL TO FLY. TOO STUBBORN TO FALL.',
     power: 'FLUTTER: PRESS {jump} AGAIN IN THE AIR FOR A DOUBLE JUMP.',
     stats: { speed: 3, jump: 5, wall: 3, tough: 3 },
@@ -162,7 +192,7 @@ const CHARACTERS = [
   {
     id: 'ember', name: 'EMBER', species: 'RED FOX', body: 'fox', legs: 'chunky', outline: '#2a140c',
     pal: { A: '#ff8a2e', a: '#c4521a', h: '#ffc07a', B: '#fff4e8', b: '#e0c8b4', w: '#ffffff', k: '#1e1420', C: '#ff8a2e', c: '#c4521a', L: '#c4521a', F: '#3a2020' },
-    speed: 124, hearts: 3, ability: 'dash',
+    speed: 124, hearts: 3, ability: 'dash', scarf: '#3ad1b5',
     tagline: 'FASTEST PAWS ON THE MOUNTAIN.',
     power: 'DASH: PRESS {action} TO BURST SIDEWAYS. DASHING THROUGH ENEMIES DEFEATS THEM.',
     stats: { speed: 5, jump: 3, wall: 3, tough: 3 },
@@ -170,38 +200,82 @@ const CHARACTERS = [
   {
     id: 'bruno', name: 'BRUNO', species: 'BEAR CUB', body: 'bear', legs: 'chunky', outline: '#22140a',
     pal: { A: '#a86a3c', a: '#6e4022', h: '#d29a62', B: '#f0d0a0', b: '#c8a070', w: '#ffffff', k: '#1e1410', C: '#ff9aa8', c: '#c86a7a', L: '#6e4022', F: '#3e2414' },
-    speed: 106, hearts: 5, ability: 'slam',
+    speed: 106, hearts: 5, ability: 'slam', scarf: '#4cc95a',
     tagline: 'SOFT FUR. HARD HEAD. FIVE HEARTS.',
     power: 'GROUND SLAM: PRESS {action} IN THE AIR TO SMASH DOWN. CRUSHES EVEN SPIKY FOES.',
     stats: { speed: 2, jump: 3, wall: 3, tough: 5 },
   },
   {
+    id: 'luna', name: 'LUNA', species: 'MOON BUNNY', body: 'bunny', legs: 'thin', outline: '#24183a', unlockAt: 2,
+    pal: { A: '#f2ecfc', a: '#b0a0d4', h: '#ffffff', B: '#ffe0ee', b: '#e0a8c4', w: '#ffffff', k: '#1c1430', C: '#ff9ac4', c: '#d0608e', L: '#b0a0d4', F: '#8a78b8' },
+    speed: 110, hearts: 3, ability: 'glide', jump: 1.06, scarf: '#9a6aff',
+    tagline: 'BIG EARS. BIGGER DREAMS.',
+    power: 'EAR GLIDE: HOLD {jump} WHILE FALLING TO FLOAT GENTLY DOWN. JUMPS A BIT HIGHER TOO.',
+    stats: { speed: 3, jump: 4, wall: 3, tough: 3 },
+  },
+  {
+    id: 'quill', name: 'QUILL', species: 'HEDGEHOG', body: 'hedgehog', legs: 'chunky', outline: '#1a1430', unlockAt: 5,
+    pal: { S: '#5a6ad8', s: '#2e3486', A: '#f0b878', a: '#b07240', h: '#ffe0b0', B: '#fff0d8', b: '#e0c8a8', w: '#ffffff', k: '#1c1420', C: '#f0b878', c: '#b07240', L: '#b07240', F: '#3a2a3a' },
+    speed: 116, hearts: 4, ability: 'roll', scarf: '#ff9a2a',
+    tagline: 'A BALL OF SPIKES WITH A HEART OF GOLD.',
+    power: 'SPIN ROLL: PRESS {action} TO CURL UP AND BOWL THROUGH ANY FOE. SPIKY ONES TOO!',
+    stats: { speed: 4, jump: 3, wall: 3, tough: 4 },
+  },
+  {
     id: 'golden', name: 'GOLDEN MOSSY', species: 'LEGEND', body: 'frog', legs: 'chunky', outline: '#3a2408', secret: true,
     pal: { A: '#ffd34a', a: '#c98a1c', h: '#fff3a8', B: '#fff7d6', b: '#e8cf8a', w: '#ffffff', k: '#2a1a0a', C: '#ff9a6a', c: '#b85a2a', L: '#f0b832', F: '#b07a18' },
-    speed: 118, hearts: 3, ability: 'all',
+    speed: 118, hearts: 3, ability: 'all', scarf: '#8a5aff',
     tagline: 'THE FROG WHO REACHED THE SUMMIT.',
     power: 'ALL POWERS: WALL GRIP, DOUBLE JUMP AND DASH.',
     stats: { speed: 4, jump: 5, wall: 5, tough: 3 },
   },
 ];
 const charById = (id) => CHARACTERS.find((c) => c.id === id) || CHARACTERS[0];
+// secret climbers need the summit; some others are earned by clearing a world
+function charUnlocked(c) {
+  if (c.secret) return !!Save.data.secret;
+  if (c.unlockAt != null) return !!(Save.data.levels[c.unlockAt] && Save.data.levels[c.unlockAt].done);
+  return true;
+}
 
-function composeChar(def, bob, legKey) {
+function composeChar(def, bob, legKey, blink = false) {
   const rows = Array.from({ length: 17 }, () => '................'.split(''));
-  LEGS[def.legs][legKey].forEach((r, i) => { for (let x = 0; x < 16; x++) if (r[x] !== '.') rows[14 + i][x] = r[x]; });
+  if (legKey) LEGS[def.legs][legKey].forEach((r, i) => { for (let x = 0; x < 16; x++) if (r[x] !== '.') rows[14 + i][x] = r[x]; });
   BODIES[def.body].forEach((r, i) => {
     const y = 1 + bob + i;
     if (y < 0 || y > 16) return;
-    for (let x = 0; x < 16; x++) if (r[x] !== '.') rows[y][x] = r[x];
+    // blinking: lids close over the eyes (only rows that hold an eye white)
+    const lid = blink && r.includes('w');
+    for (let x = 0; x < 16; x++) if (r[x] !== '.') rows[y][x] = lid && r[x] === 'w' ? 'A' : lid && r[x] === 'k' ? 'a' : r[x];
   });
   return rows.map((r) => r.join(''));
 }
+// a curled-up ball (rolling / spinning frames), drawn from the character's palette
+function ballSprite(def, rot) {
+  const P = def.pal, rows = [];
+  const spikes = def.body === 'hedgehog';
+  for (let y = 0; y < 14; y++) {
+    let r = '';
+    for (let x = 0; x < 14; x++) {
+      const dx = x - 6.5, dy = y - 6.5, d = Math.hypot(dx, dy);
+      const a = Math.atan2(dy, dx) + rot;
+      if (d > 6.6 + (spikes && Math.cos(a * 7) > 0.3 ? 0.9 : 0)) { r += '.'; continue; }
+      if (d > 5.6) r += spikes ? (P.s ? 's' : 'a') : 'a';
+      else if (Math.sin(a * 2) > 0.55 && d > 2) r += spikes && P.S ? 'S' : 'B';
+      else if (dx + dy < -4) r += 'h';
+      else r += spikes && P.S ? 'S' : 'A';
+    }
+    rows.push(r);
+  }
+  return makeSprite(rows, P, def.outline, def.id + 'ball');
+}
 function buildCharFrames(def) {
-  const mk = (bob, legs) => makeSprite(composeChar(def, bob, legs), def.pal, def.outline, def.id);
+  const mk = (bob, legs, blink) => makeSprite(composeChar(def, bob, legs, blink), def.pal, def.outline, def.id);
   return {
-    idle: [mk(0, 'stand'), mk(1, 'stand')],
+    idle: [mk(0, 'stand'), mk(1, 'stand')], blink: mk(0, 'stand', true),
     run: [mk(0, 'runA'), mk(-1, 'runB'), mk(0, 'runA'), mk(-1, 'runB')],
     jump: mk(-1, 'jump'), fall: mk(0, 'fall'), crouch: mk(1, 'jump'),
+    ball: [0, 1, 2, 3].map((i) => ballSprite(def, (i * Math.PI) / 4)),
   };
 }
 
@@ -226,6 +300,18 @@ const PAL = {
   feather: { A: '#3a4278', a: '#1c2048', h: '#ffd84a' },
   boss: { A: '#2f3566', a: '#191c3a', h: '#56609e', Y: '#ffd84a', y: '#c98a1c', w: '#ffffff', r: '#ff3a5a', k: '#0c0c18' },
   bossHurt: { A: '#ff6a7a', a: '#b02a4a', h: '#ffb0b8', Y: '#ffd84a', y: '#c98a1c', w: '#ffffff', r: '#ffffff', k: '#0c0c18' },
+  boar: { A: '#8e5a46', a: '#5a3226', h: '#c08a6a', P: '#ffa8b4', p: '#d0707e', w: '#fff4e0', k: '#1d1a2b', r: '#ff3a5a' },
+  bomb: { A: '#3c3c62', a: '#1c1c34', h: '#8a8ac0', w: '#ffffff', k: '#0c0a18', Y: '#ffd84a', y: '#ff7a1a', F: '#c8a070' },
+  bombLit: { A: '#e8434f', a: '#9b1d3a', h: '#ffb0a0', w: '#ffffff', k: '#0c0a18', Y: '#ffffff', y: '#ffd84a', F: '#c8a070' },
+  ghost: { A: '#f2eeff', a: '#b4aad8', h: '#ffffff', k: '#2a1a3a', r: '#ff7a9a', b: '#d8d0f4' },
+  leaper: { R: '#ff5a1a', Y: '#ffd25a', y: '#c82a10', w: '#ffffff', k: '#2a0a0a' },
+  cloudy: { A: '#8c92b4', a: '#5a6084', h: '#c8d0ea', k: '#1a1428', w: '#ffffff', Y: '#ffd84a' },
+  penguin: { A: '#2c3450', a: '#161a2c', h: '#4a5478', w: '#ffffff', b: '#c8d8ec', Y: '#ffa82e', y: '#d06a14', k: '#0c0c18', R: '#ff4d6d' },
+  ball: { A: '#2a2a40', a: '#12121e', h: '#6a6a90', w: '#ffffff', r: '#ff3a5a', Y: '#ffd84a', k: '#ff3a5a' },
+  pStar: { Y: '#ffd84a', y: '#d08a1a', h: '#fff6b0', w: '#ffffff', k: '#3a2408' },
+  pShield: { A: '#4ab4ff', a: '#1a5ac0', h: '#b8ecff', w: '#ffffff' },
+  pWings: { A: '#ffffff', a: '#9ab8e8', h: '#ffffff', b: '#c8dcf8' },
+  pMagnet: { R: '#ff4d6d', r: '#b81d45', B: '#4a8aff', b: '#2a4ab0', S: '#f0f4ff', s: '#9aa4bc' },
 };
 
 const SPRITE_ROWS = {
@@ -273,6 +359,25 @@ const SPRITE_ROWS = {
     '.........YY..YY.........',
     '........YYY.YYY.........',
   ],
+  boar0: ['...........kk...', '.....aaaaaAAk...', '...aAAAAAAAAAa..', '..aAAhhAAAAAwkA.', '.aAAhAAAAAAAkkAA', 'aAAAAAAAAAAAAPPw', 'aAAAAAAAAAAAAPpw', '.aAAAAAAAAAAAAa.', '..aaaaaaaaaaaa..', '..kk..kk..kk.kk.', '..k...k....k..k.'],
+  boar1: ['...........kk...', '.....aaaaaAAk...', '...aAAAAAAAAAa..', '..aAAhhAAAAAwkA.', '.aAAhAAAAAAAkkAA', 'aAAAAAAAAAAAAPPw', 'aAAAAAAAAAAAAPpw', '.aAAAAAAAAAAAAa.', '..aaaaaaaaaaaa..', '...kk..kk.kk.kk.', '....k..k...k..k.'],
+  boarMad: ['...........kk...', '.....aaaaaAAk...', '...aAAAAAAAkkk..', '..aAAhhAAAAArkA.', '.aAAhAAAAAAAkkAA', 'aAAAAAAAAAAAAPPw', 'aAAAAAAAAAAAAPpw', '.aAAAAAAAAAAAAa.', '..aaaaaaaaaaaa..', '.kk...kk.kk...kk', 'k......k.k......'],
+  bomb0: ['.........hY...', '........Fy....', '.......F......', '...aaaaaa.....', '..aAAAAAAa....', '.aAhhAAAAAa...', '.aAhAAAwkwkA..', '.aAAAAAwkwkA..', '.aAAAAAAAAAa..', '..aAAAAAAAa...', '...aaaaaaa....', '..kk.....kk...'],
+  bomb1: ['..........Y...', '........Fh....', '.......F......', '...aaaaaa.....', '..aAAAAAAa....', '.aAhhAAAAAa...', '.aAhAAAwkwkA..', '.aAAAAAwkwkA..', '.aAAAAAAAAAa..', '..aAAAAAAAa...', '...aaaaaaa....', '...kk...kk....'],
+  ghost0: ['....hhhhh.....', '..hhAAAAAhh...', '.hAAAAAAAAAh..', 'hAAAkkAAkkAAa.', 'hAAAkkAAkkAAa.', 'hAAAAAAAAAAAa.', 'hAAAArrrrAAAa.', 'hAAAAArrAAAAa.', 'hAAAAAAAAAAa..', '.aAAAAAAAAAa..', '..aAAaAAaAAa..', '...aa.aa.aa...'],
+  ghostShy: ['....hhhhh.....', '..hhAAAAAhh...', '.hAAAAAAAAAh..', 'hAAhhhAhhhAAa.', 'hAAhbbAhbbAAa.', 'hAAAAAAAAAAAa.', 'hAAAAAAAAAAAa.', 'hAAAAAkkAAAAa.', 'hAAAAAAAAAAa..', '.aAAAAAAAAAa..', '..aAAaAAaAAa..', '...aa.aa.aa...'],
+  leaper0: ['....YY......', '...YRRY.....', '..YRRRRY....', '.YRRwkRRYY..', 'YRRRkkRRRRY.', 'YRRRRRRRRRRY', '.YRRRRRRRRY.', '..YRRyRRRY..', '...YRyyRY...', '....YRRY....', '.....YY.....'],
+  leaper1: ['.....YY.....', '...YYRRY....', '..YRRRRRY...', '.YRRwkRRRY..', 'YRRRkkRRRRY.', 'YRRRRRRRRRRY', '.YRRRRRRRRY.', '..YRRRyRRY..', '...YRyyRY...', '...YRRRY....', '....YY......'],
+  cloudy0: ['......hhhh..........', '....hhAAAAhh..hhh...', '..hhAAAAAAAAhhAAAh..', '.hAAAkAAAAAkAAAAAAh.', 'hAAAAAkkAAkkAAAAAAAa', 'hAAAAAwkAAwkAAAAAAAa', 'hAAAAAAAAAAAAAAAAAAa', '.aAAAAAkkkkkAAAAAAa.', '..aaAAAAAAAAAAAaaa..', '....aaaaaaaaaaa.....'],
+  cloudy1: ['..........hhhh......', '...hhh..hhAAAAhh....', '..hAAAhhAAAAAAAAhh..', '.hAAAAAAkAAAAAkAAAh.', 'hAAAAAAAAkkAAkkAAAAa', 'hAAAAAAAAwkAAwkAAAAa', 'hAAAAAAAAAAAAAAAAAAa', '.aAAAAAAAkkkkkAAAAa.', '..aaaAAAAAAAAAAAaa..', '.....aaaaaaaaaaa....'],
+  penguin0: ['....hhhh......', '...hAAAAa.....', '..hAAwwkwk....', '..hAAwwkkYY...', '..AAwwwwwYy...', '.AAwwwwwwA....', 'RRRRRwwwwAa...', '.AAwwwwwwAa...', '.aAbwwwwwa....', '..aAbbwwa.....', '...aaaaa......', '..YY...YY.....'],
+  penguin1: ['....hhhh......', '...hAAAAa.....', '..hAAwwkwk....', '..hAAwwkkYY...', '..AAwwwwwYy...', '.AAwwwwwwA....', '.RRRRRwwwAa...', '.AAwwwwwwAa...', '.aAbwwwwwa....', '..aAbbwwa.....', '...aaaaa......', '...YY.YY......'],
+  penguinSlide: ['..............', '..............', '..............', '....hhhhhh....', '..hAAwwwwwAhk.', '.hAwwwwwwwwwkY', 'RRRwwwwwwwwAYy', '.aAbbbbbbbAA..', '..aaaaaaaaa...', '..............', '..............', '..............'],
+  ball0: ['...aaaaa...', '..aAAAAAa..', '.aAhhAAAAa.', 'aAhAAAAwkAa', 'aAAAAAAkkAa', 'aAAAAAAAAAa', 'aAAAAAAAAAa', '.aAAAAAAAa.', '..aAAAAAa..', '...aaaaa...'],
+  pStar: ['.....h.....', '....hYy....', '....hYy....', 'hhhhYYYYyyy', '.hYYYYYYYy.', '..hYkYkYy..', '...YYYYYy..', '..hYYYYYYy.', '..YYy.yYYy.', '.hYy...yYy.', '.yy.....yy.'],
+  pShield: ['.hhhhhhhhh.', 'hAAAAwAAAAa', 'hAAAwwwAAAa', 'hAAAAwAAAAa', 'hAAAAAAAAAa', '.hAAAAAAAa.', '.hAAAAAAAa.', '..hAAAAAa..', '...hAAAa...', '....hAa....', '.....a.....'],
+  pWings: ['..........hh', '.......hhhAa', '....hhhAAAa.', '..hhAAAAAa..', '.hAAAAAAa...', 'hAAAbAAAAa..', 'hAAbAAAAAAa.', '.abAAbAAAa..', '...abAAAa...', '.....aaa....'],
+  pMagnet: ['.SSs...SSs.', '.SSs...SSs.', '.RRr...BBb.', '.RRr...BBb.', '.RRr...BBb.', '.RRr...BBb.', '.RRRr.BBBb.', '..RRRBBBb..', '...rRBBb...', '....rbb....'],
   wingUp: ['aa............', 'aAa...........', 'aAAa..........', '.aAAa.........', '.aAhAa........', '..aAhAa.......', '..aAAhAaa.....', '...aAAAAAAa...', '....aaAAAAAAa.', '......aaaaaaa.'],
   wingMid: ['..............', '..............', '..............', 'aaaa..........', 'aAAAaaa.......', '.aAhhAAAaaa...', '..aaAAhhAAAAa.', '....aaaAAAAAa.', '.......aaaaaa.', '..............'],
   wingDown: ['..............', '..............', '..............', '..............', '.........aaaa.', '......aaAAAAa.', '...aaAAhAAAa..', '.aaAAhAAAaa...', 'aAAhAAaaa.....', 'aaaaa.........'],
@@ -307,6 +412,68 @@ function buildArt() {
   ART.snowball = buildBoulder(14, '#e8f2ff', '#9ab4d8', '#ffffff');
   ART.dawnGem = buildDawnGem();
   ART.clouds = [buildCloud(34, 12, 1), buildCloud(52, 16, 2), buildCloud(26, 10, 3), buildCloud(64, 18, 4)];
+  ART.boar = [mk('boar0', PAL.boar, '#1d0f18'), mk('boar1', PAL.boar, '#1d0f18')];
+  ART.boarMad = mk('boarMad', PAL.boar, '#1d0f18');
+  ART.bomb = [mk('bomb0', PAL.bomb, '#0c0a18'), mk('bomb1', PAL.bomb, '#0c0a18')];
+  ART.bombLit = [mk('bomb0', PAL.bombLit, '#0c0a18'), mk('bomb1', PAL.bombLit, '#0c0a18')];
+  ART.ghost = mk('ghost0', PAL.ghost, '#2a1a3a'); ART.ghostShy = mk('ghostShy', PAL.ghost, '#2a1a3a');
+  ART.leaper = [mk('leaper0', PAL.leaper, '#2a0a0a'), mk('leaper1', PAL.leaper, '#2a0a0a')];
+  ART.cloudy = [mk('cloudy0', PAL.cloudy, '#1a1428'), mk('cloudy1', PAL.cloudy, '#1a1428')];
+  ART.penguin = [mk('penguin0', PAL.penguin, '#0c0c18'), mk('penguin1', PAL.penguin, '#0c0c18')];
+  ART.penguinSlide = mk('penguinSlide', PAL.penguin, '#0c0c18');
+  ART.cannonball = mk('ball0', PAL.ball, '#0c0a18');
+  ART.power = {
+    star: mk('pStar', PAL.pStar, '#3a2408'), shield: mk('pShield', PAL.pShield, '#0c2a50'),
+    wings: mk('pWings', PAL.pWings, '#2a3a60'), magnet: mk('pMagnet', PAL.pMagnet, '#200c18'),
+  };
+  ART.saw = buildSawFrames(10);
+  ART.sawBig = buildSawFrames(14);
+  ART.glow = {};
+  for (const [k, col] of Object.entries({ gold: '255,216,74', cyan: '90,230,255', red: '255,90,60', white: '255,255,255', pink: '255,120,180', violet: '180,120,255', green: '122,255,154', orange: '255,140,40' })) ART.glow[k] = buildGlow(32, col);
+}
+
+// soft round light used with additive blending (bloom on gems, fire, power-ups)
+function buildGlow(r, rgb) {
+  const c = newCanvas(r * 2, r * 2), g = c.getContext('2d');
+  const gr = g.createRadialGradient(r, r, 0, r, r, r);
+  gr.addColorStop(0, `rgba(${rgb},0.55)`); gr.addColorStop(0.35, `rgba(${rgb},0.22)`); gr.addColorStop(1, `rgba(${rgb},0)`);
+  g.fillStyle = gr; g.fillRect(0, 0, r * 2, r * 2);
+  return c;
+}
+function glow(kind, x, y, r, a = 1) {
+  const img = ART.glow[kind]; if (!img) return;
+  const prev = ctx.globalCompositeOperation;
+  ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = a;
+  ctx.drawImage(img, Math.round(x - r), Math.round(y - r), r * 2, r * 2);
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = prev;
+}
+
+// spinning saw blade frames: steel disc, teeth, hub
+function buildSawFrames(r) {
+  const frames = [];
+  for (let f = 0; f < 6; f++) {
+    const d = r * 2 + 4, c = newCanvas(d, d), g = c.getContext('2d');
+    const img = g.createImageData(d, d), px = new Uint32Array(img.data.buffer);
+    const cx = d / 2, cy = d / 2, rot = (f / 6) * (Math.PI / 4) * 2;
+    for (let y = 0; y < d; y++) for (let x = 0; x < d; x++) {
+      const dx = x + 0.5 - cx, dy = y + 0.5 - cy, dist = Math.hypot(dx, dy);
+      const a = Math.atan2(dy, dx) + rot;
+      const tooth = ((a / (Math.PI * 2)) * 12 % 1 + 1) % 1;            // sawtooth profile
+      const edge = r - 2 + tooth * 3;
+      let col = null;
+      if (dist <= edge) {
+        if (dist > edge - 1.2) col = '#1a1428';
+        else if (dist > r - 3.5) col = tooth > 0.6 ? '#ffffff' : '#c8d0e0';
+        else if (dist < 2.2) col = '#3a3448';
+        else if (dist < 3.6) col = '#ffd84a';
+        else col = Math.sin(a * 3) > 0.4 ? '#a4acc4' : dx - dy < 0 ? '#8a92aa' : '#6c7490';
+      }
+      if (col) { const [R, G, B] = hexToRgb(col); px[y * d + x] = ((255 << 24) | (B << 16) | (G << 8) | R) >>> 0; }
+    }
+    g.putImageData(img, 0, 0);
+    frames.push(c);
+  }
+  return frames;
 }
 
 // Boss frames: far wing (dark) + body + near wing, 40x30 canvas

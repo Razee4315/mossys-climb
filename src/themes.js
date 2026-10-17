@@ -51,6 +51,20 @@ const THEMES = {
     sky: ['#10152a', '#323c60'], skyHigh: ['#080a18', '#252c4c'], clouds: false,
     bg: 'storm', weather: 'rain', darkness: 0.2, music: 'storm', stone: '#7a84a0',
   },
+  sawmill: {
+    pattern: 'wood', base: '#a8703c', dark: '#82522a', light: '#c88c50', mortar: '#5a3418', edge: '#2a160a',
+    cap: 'grass', top: '#d89a3a', topHi: '#f8d070', topDark: '#a0602a',
+    deco: ['tuft', 'mushroom', 'pebble', 'stump', 'tuft'], decoRate: 0.3, under: 'roots', plank: 'wood',
+    sky: ['#ff8a5a', '#ffe0a0'], skyHigh: ['#d0607a', '#ffb08a'], sun: '#fff0b0', clouds: true,
+    bg: 'sawmill', weather: 'autumn', darkness: 0, music: 'sawmill', stone: '#a08060',
+  },
+  clouds: {
+    pattern: 'puff', base: '#e4ecfc', dark: '#c4d2f0', light: '#ffffff', edge: '#7a88c0',
+    cap: 'snow', top: '#ffffff', topHi: '#ffffff', topDark: '#dce6fa',
+    deco: ['flower', 'flowerY', 'tuft', 'flower'], decoRate: 0.35, under: 'none', plank: 'rainbow',
+    sky: ['#6ab4ff', '#ffd8f0'], skyHigh: ['#4a8aff', '#ffe4f6'], sun: '#ffffff', clouds: true,
+    bg: 'clouds', weather: 'sparkles', darkness: 0, music: 'clouds', stone: '#c8d0e8',
+  },
   summit: {
     pattern: 'brick', base: '#5a6280', dark: '#3c4460', light: '#747e9e', mortar: '#2a3044', edge: '#141824',
     cap: 'snow', top: '#e8f0ff', topHi: '#ffffff', topDark: '#a8b8d8',
@@ -85,6 +99,20 @@ function PixBuf(w, h) {
     rect(x, y, rw, rh, hex) { for (let j = 0; j < rh; j++) for (let i = 0; i < rw; i++) this.put(x + i, y + j, hex); },
     clear(x, y) { if (x >= 0 && y >= 0 && x < w && y < h) buf[y * w + x] = 0; },
     isEmpty(x, y) { return x < 0 || y < 0 || x >= w || y >= h || buf[y * w + x] === 0; },
+    // sunlit rim: brighten pixels whose upper-left neighbour is empty sky
+    rimLight(k = 0.14) {
+      const out = buf.slice();
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const v = buf[y * w + x];
+        if (!v) continue;
+        const open = (x > 0 && !buf[y * w + x - 1]) || (y > 0 && !buf[(y - 1) * w + x]);
+        if (!open) continue;
+        const r = v & 255, g = (v >> 8) & 255, b = (v >> 16) & 255;
+        const L = (c) => Math.min(255, Math.round(c + (255 - c) * k));
+        out[y * w + x] = ((255 << 24) | (L(b) << 16) | (L(g) << 8) | L(r)) >>> 0;
+      }
+      buf.set(out);
+    },
     done() { g.putImageData(img, 0, 0); return c; },
   };
 }
@@ -101,6 +129,27 @@ function basePixel(th, wx, wy) {
     if (wy % 8 === 0) col = shade(col, 0.12);
     const n = hash2(wx, wy, 4);
     if (n < 0.05) col = shade(col, -0.15);
+    return col;
+  }
+  if (th.pattern === 'wood') {
+    // horizontal timber planks with grain and nail heads
+    const row = Math.floor(wy / 6), bx = wx + hash2(row, 0, 13) * 40;
+    if (wy % 6 === 5) return th.mortar;
+    if (Math.floor(bx) % 28 === 0) return th.mortar;
+    const tone = hash2(Math.floor(bx / 28), row, 12);
+    let col = tone < 0.3 ? th.dark : tone > 0.78 ? th.light : th.base;
+    if (hash2(wx >> 2, wy, 14) < 0.12) col = shade(col, -0.1);
+    if (wy % 6 === 0) col = shade(col, 0.1);
+    if (Math.floor(bx) % 28 === 2 && wy % 6 === 2) col = '#3a2a20';
+    return col;
+  }
+  if (th.pattern === 'puff') {
+    // soft rounded cloud lumps
+    const cx = Math.floor(wx / 10), cy = Math.floor(wy / 8);
+    const ox = cx * 10 + 5 + (hash2(cx, cy, 15) - 0.5) * 4, oy = cy * 8 + 4;
+    const d = Math.hypot(wx - ox, (wy - oy) * 1.2);
+    let col = d < 3 ? th.light : d < 5.5 ? th.base : th.dark;
+    if (hash2(wx, wy, 16) < 0.04) col = th.light;
     return col;
   }
   if (th.pattern === 'rock') {
@@ -198,6 +247,11 @@ function paintPlank(P, kind) {
     wood: ['#f0c488', '#c88a4a', '#7a4a20', '#5a3418'], stone: ['#a49cc0', '#7a7296', '#4a4462', '#2e2a40'],
     metal: ['#c8d0e0', '#8a94ac', '#4c546a', '#2c3242'], ice: ['#ffffff', '#b8e4ff', '#6aa8d8', '#3a6a9a'],
   }[kind] || ['#f0c488', '#c88a4a', '#7a4a20', '#5a3418'];
+  if (kind === 'rainbow') {
+    const bands = ['#ff5a7a', '#ffa83a', '#ffe04a', '#6ae06a', '#4ab4ff', '#9a6aff'];
+    for (let x = 0; x < 16; x++) for (let y = 0; y < 6; y++) P(x, y, y === 0 ? shade(bands[0], 0.4) : bands[y]);
+    return;
+  }
   for (let x = 0; x < 16; x++) {
     P(x, 0, C[0]); P(x, 1, C[1]); P(x, 2, C[1]); P(x, 3, C[1]); P(x, 4, C[2]); P(x, 5, C[3]);
     if (x % 8 === 7) { P(x, 1, C[2]); P(x, 2, C[2]); P(x, 3, C[2]); }
@@ -257,6 +311,10 @@ function paintDeco(B, kind, x, y, seed, lights) {
       break;
     case 'snowlump':
       B.rect(x + 1, y - 2, 6, 2, '#ffffff'); B.rect(x + 2, y - 3, 3, 1, '#ffffff'); B.put(x + 6, y - 1, '#d0e2f4');
+      break;
+    case 'stump':
+      B.rect(x + 1, y - 4, 6, 4, '#8a5a30'); B.rect(x + 1, y - 5, 6, 1, '#e8c890'); B.put(x + 3, y - 5, '#c8a070'); B.put(x + 4, y - 5, '#b08050');
+      B.put(x, y - 1, '#6a4020'); B.put(x + 7, y - 1, '#6a4020'); B.rect(x + 2, y - 3, 1, 2, '#6a4020');
       break;
     case 'pine':
       B.rect(x + 3, y - 2, 1, 2, '#6a4a30');
@@ -381,7 +439,7 @@ function buildThemeProps(themeId) {
   const crumble = B.done();
 
   const plat = PixBuf(32, 8);
-  const pc = { wood: ['#f0c488', '#c88a4a', '#7a4a20'], stone: ['#b0a8cc', '#7a7296', '#3e3854'], metal: ['#d8e0f0', '#8a94ac', '#3c4458'], ice: ['#ffffff', '#a8dcff', '#4a88c0'] }[th.plank];
+  const pc = { rainbow: ['#ffffff', '#ffd0ec', '#b07ae0'], wood: ['#f0c488', '#c88a4a', '#7a4a20'], stone: ['#b0a8cc', '#7a7296', '#3e3854'], metal: ['#d8e0f0', '#8a94ac', '#3c4458'], ice: ['#ffffff', '#a8dcff', '#4a88c0'] }[th.plank];
   for (let x = 0; x < 32; x++) {
     plat.put(x, 0, pc[0]); for (let y = 1; y < 5; y++) plat.put(x, y, pc[1]); plat.put(x, 5, pc[2]);
     if (x % 8 === 7) for (let y = 1; y < 5; y++) plat.put(x, y, pc[2]);
@@ -480,12 +538,31 @@ function treeLayer(W, H, seed, o) {
       for (let y = base - th + 8; y < base - 6; y += 10) if (rng() < 0.6) B.rect(x + 3 + Math.floor(rng() * (w - 6)), y, 2, 3, o.window || '#ffd84a');
     } else if (kind === 'spire') {
       for (let y = 0; y < th; y++) { const half = Math.floor((y / th) * 6); B.rect(x - half, base - th + y, half * 2 + 1, 1, o.color); }
+    } else if (kind === 'mill') {
+      // timber mill: barn, pitched roof, chimney and a water wheel
+      const w = 30 + Math.floor(rng() * 10), hh = Math.floor(th * 0.45);
+      B.rect(x, base - hh, w, hh, o.color);
+      for (let i = 0; i <= w / 2 + 2; i++) B.rect(x - 2 + i, base - hh - i * 0.6, w + 4 - i * 2, 1, o.color);
+      B.rect(x + w - 8, base - hh - 16, 4, 12, o.color);
+      if (o.window) { B.rect(x + 5, base - hh + 5, 3, 3, o.window); B.rect(x + 14, base - hh + 5, 3, 3, o.window); }
+      const r = 9;
+      for (let a = 0; a < Math.PI * 2; a += 0.05) { B.put(x - 4 + Math.cos(a) * r, base - r + Math.sin(a) * r, o.color); }
+      for (let k = 0; k < 4; k++) { const a = (k * Math.PI) / 4; for (let t = -r; t <= r; t++) B.put(x - 4 + Math.cos(a) * t, base - r + Math.sin(a) * t, o.color); }
+    } else if (kind === 'island') {
+      // a little floating island with a tree and a trickling waterfall
+      const w = 22 + Math.floor(rng() * 16), top = base - th;
+      for (let i = 0; i < w; i++) { const d = Math.floor(Math.sin((i / w) * Math.PI) * 14); B.rect(x + i, top, 1, 3 + d, o.color); B.put(x + i, top, o.rim || o.color); }
+      const tx = x + Math.floor(w * 0.6);
+      B.rect(tx, top - 7, 2, 7, o.trunk || o.color);
+      for (let dy = -5; dy <= 5; dy++) for (let dx = -5; dx <= 5; dx++) if (dx * dx + dy * dy <= 25) B.put(tx + dx, top - 11 + dy, o.leaf || o.color);
+      if (o.water) for (let y = top + 3; y < top + 40; y++) B.put(x + 4 + (y % 2), y, o.water);
     } else if (kind === 'bush') {
       const r = Math.floor(th * 0.5);
       for (let dy = -r; dy <= 0; dy++) for (let dx = -r * 2; dx <= r * 2; dx++) if ((dx * dx) / 4 + dy * dy <= r * r) B.put(((x + dx) % W + W) % W, base + dy - 1, o.color);
     }
     x += o.gapMin + Math.floor(rng() * (o.gapMax - o.gapMin));
   }
+  B.rimLight(o.rimK != null ? o.rimK : 0.16);
   return B.done();
 }
 
@@ -503,6 +580,24 @@ function caveLayer(W, H, seed, o) {
     for (let j = 0; j < len; j++) { const w = Math.max(1, Math.floor((1 - j / len) * 5)); B.rect(x - (w >> 1), up ? 30 + j : H - 40 - j, w, 1, o.color); }
   }
   if (o.glow) for (let i = 0; i < 30; i++) B.put(Math.floor(rng() * W), Math.floor(rng() * H), pick2(o.glow, rng()));
+  return B.done();
+}
+
+// a band of big soft clouds (cloud garden backdrop)
+function cloudBankLayer(W, H, seed, o) {
+  const rng = mulberry32(seed);
+  const B = PixBuf(W, H);
+  const puffs = [];
+  for (let i = 0; i < 26; i++) puffs.push({ x: rng() * W, y: H * 0.35 + rng() * H * 0.35, r: 12 + rng() * 22 });
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    let inside = false, lit = false;
+    for (const p of puffs) for (const ox of [-W, 0, W]) {
+      const dx = x - p.x - ox, dy = y - p.y;
+      if (dx * dx + dy * dy <= p.r * p.r) { inside = true; if (dy < -p.r * 0.45 && dx < p.r * 0.2) lit = true; }
+    }
+    if (y > H * 0.62) inside = true;
+    if (inside) B.put(x, y, lit ? o.light : y > H * 0.62 ? o.dark : o.color);
+  }
   return B.done();
 }
 
@@ -538,6 +633,18 @@ function buildBackground(themeId) {
       L(ridgeLayer(W, 160, 61, { base: 60, amp: 95, color: '#9ab8e0', shadow: '#86a4cc', snow: '#ffffff', snowShadow: '#d4e4f8', sharp: true, freq: 4 }), 0.06, 10);
       L(ridgeLayer(W, 100, 62, { base: 30, amp: 50, color: '#d8e8f8', shadow: '#c0d4ec', freq: 5 }), 0.18, 6);
       L(treeLayer(W, 80, 63, { color: '#3a5a7a', snow: '#ffffff', kinds: ['pine', 'pine'], minH: 30, maxH: 64, gapMin: 16, gapMax: 40, ground: 8 }), 0.42, 4);
+      break;
+    case 'sawmill':
+      L(ridgeLayer(W, 160, 81, { base: 50, amp: 100, color: '#b8607a', shadow: '#a0506a', snow: '#ffd8d0', snowShadow: '#e8b0b0', sharp: true, freq: 4 }), 0.06, 10);
+      L(treeLayer(W, 120, 82, { color: '#7a3a3a', kinds: ['pine', 'pine', 'pine'], minH: 40, maxH: 90, gapMin: 10, gapMax: 24, ground: 10 }), 0.2, 6);
+      L(treeLayer(W, 110, 83, { color: '#4a2224', trunk: '#4a2224', window: '#ffc860', kinds: ['pine', 'mill', 'pine', 'pine'], minH: 50, maxH: 100, gapMin: 30, gapMax: 60, ground: 12 }), 0.42, 4);
+      break;
+    case 'clouds':
+      out.rainbow = true;
+      L(cloudBankLayer(W, 150, 91, { color: '#f4e8ff', light: '#ffffff', dark: '#e0d4f4' }), 0.05, 30);
+      L(treeLayer(W, 150, 92, { color: '#b8a8e0', rim: '#e8e0ff', trunk: '#8a7ab8', leaf: '#c8b8f0', water: '#e8f4ff', kinds: ['island', 'island'], minH: 60, maxH: 120, gapMin: 90, gapMax: 160, ground: 0 }), 0.15, -30);
+      out.layers[out.layers.length - 1].noFill = true;
+      L(cloudBankLayer(W, 110, 93, { color: '#ffffff', light: '#ffffff', dark: '#e8eefc' }), 0.32, 22);
       break;
     case 'storm':
     case 'summit':

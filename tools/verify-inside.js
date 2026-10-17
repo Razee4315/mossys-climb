@@ -4,8 +4,8 @@ function __verify(idx, opt) {
   startLevel(idx);
   const L = level, def = L.def;
   const at = (tx, ty) => (tx < 0 || ty < 0 || tx >= L.w || ty >= L.h ? (ty >= L.h ? '.' : '#') : def.map[ty][tx]);
-  const solidCh = (c) => c === '#' || c === 'I' || c === 'X';
-  const floorCh = (c) => solidCh(c) || c === '=';
+  const solidCh = (c) => '#IX()ER[]'.includes(c);
+  const floorCh = (c) => solidCh(c) || c === '=' || c === '~';
 
   // ------------------------------------------------------------ static checks
   if (!THEMES[def.theme]) problems.push(`unknown theme ${def.theme}`);
@@ -21,7 +21,8 @@ function __verify(idx, opt) {
   for (let ty = 0; ty < L.h; ty++) for (let tx = 0; tx < L.w; tx++) {
     const c = def.map[ty][tx], below = at(tx, ty + 1), above = at(tx, ty - 1);
     const where = `'${c}' at ${tx},${ty}`;
-    if ('PSF?TBNQGM'.includes(c) && !floorCh(below)) problems.push(`${where} is not standing on ground`);
+    if ('PSF?TBNQGMA{_'.includes(c) && !floorCh(below)) problems.push(`${where} is not standing on ground`);
+    if (c === '`' && !L.enemySpawns.some((e) => e.type === 'cloudy')) problems.push(`${where} cloud missing`);
     if ((c === 'Y' || c === '!') && !solidCh(above)) problems.push(`${where} needs a ceiling right above`);
     if (c === 'H' || c === 'V') {
       if (at(tx + 1, ty) !== '.') problems.push(`${where}: platform needs an empty tile to its right`);
@@ -29,6 +30,7 @@ function __verify(idx, opt) {
     if (c === 'K' && (at(tx + 1, ty) !== '.' || at(tx, ty + 1) !== '.' || at(tx + 1, ty + 1) !== '.')) problems.push(`${where}: crusher needs a 2x2 empty space`);
     if (c === '*' && solidCh(at(tx, ty))) problems.push(`${where} gem inside ground`);
   }
+  for (const s of L.saws) if (s.axis && s.max - s.min < 16) problems.push(`saw at ${Math.floor(s.x0 / TS)},${Math.floor(s.y0 / TS)} has no room to move`);
   for (const p of L.platforms) if (p.max - p.min < 16) problems.push(`platform at ${p.x0 / TS},${p.y0 / TS} has no room to move (${p.max - p.min}px)`);
   for (const k of L.crushers) {
     let found = false;
@@ -76,13 +78,19 @@ function __verify(idx, opt) {
     if (usesAbility && j !== 'hold') ACTIONS.push({ ix, j, a: true, d: false });
   }
   ACTIONS.push({ ix: 0, j: 'press', a: false, d: true }); // drop through planks
+  const beats = L.beats.length > 0;
+  let bt = 0; // beat clock of the state being expanded
+  const applyBeat = (t) => { const ph = Math.floor(t / BEAT_PERIOD) % 2; for (const b of L.beats) L.grid[b.ty * L.w + b.tx] = b.group === ph ? T.BEAT : T.EMPTY; };
   const FIELDS = ['x', 'y', 'remX', 'remY', 'vx', 'vy', 'facing', 'onGround', 'ground', 'wasGround', 'coyote', 'buffer', 'varJump', 'springLock', 'wallDir', 'wallLock', 'canDouble', 'canDash', 'dashT', 'dashCd', 'slam', 'slamT', 'dropT', 'drop', 'prevBottom'];
-  const snap = () => { const s = {}; for (const f of FIELDS) s[f] = P[f]; return s; };
-  const restore = (s) => { for (const f of FIELDS) P[f] = s[f]; P.dead = false; P.poof = 0; P.invuln = 0; P.hurtLock = 0; P.trail.length = 0; };
+  const snap = () => { const s = { bt }; for (const f of FIELDS) s[f] = P[f]; return s; };
+  const restore = (s) => { for (const f of FIELDS) P[f] = s[f]; bt = s.bt; P.dead = false; P.poof = 0; P.invuln = 0; P.hurtLock = 0; P.trail.length = 0; P.power = null; P.shield = false; };
+  // the beat clock only matters near beat blocks; elsewhere states merge regardless of timing
+  const nearBeat = (x, y) => L.beats.some((b) => Math.abs(b.tx * TS - x) < TS * 5 && Math.abs(b.ty * TS - y) < TS * 7);
+  const beatKey = () => (beats && nearBeat(P.x, P.y) ? '|' + (Math.floor(bt * 5) % Math.round(BEAT_PERIOD * 10)) : '');
   // coarse state key: grounded states only care about position + speed; airborne ones about velocity too
-  const key = () => P.onGround
+  const key = () => (P.onGround
     ? `g${P.x >> 2},${P.y >> 2},${Math.round(P.vx / 40)}`
-    : `a${P.x >> 2},${P.y >> 2},${Math.round(P.vx / 40)},${Math.round(P.vy / 50)},${+P.varJump}${+P.canDouble}${+P.canDash}${+(P.wallLock > 0)}${P.slam}`;
+    : `a${P.x >> 2},${P.y >> 2},${Math.round(P.vx / 40)},${Math.round(P.vy / 50)},${+P.varJump}${+P.canDouble}${+P.canDash}${+(P.wallLock > 0)}${P.slam}${+(P.rollT > 0)}`) + beatKey();
   const H = Input.held, PR = Input.pressed;
 
   function sim(a, frames, tg, hit) {
@@ -92,6 +100,7 @@ function __verify(idx, opt) {
       PR.jump = a.j === 'press' && f === 0; PR.action = a.a && f === 0; PR.down = a.d && f === 0;
       PR.left = PR.right = PR.up = false;
       fx.particles.length = 0;
+      if (beats) { bt += STEP; applyBeat(bt); }
       updatePlayer(STEP);
       springContacts();
       if (P.dead || P.poof > 0) return false;
@@ -101,7 +110,7 @@ function __verify(idx, opt) {
   }
 
   function search(sx, sy, tg, max, stopWhenAll) {
-    placePlayer(sx, sy); P.invuln = 0;
+    placePlayer(sx, sy); P.invuln = 0; bt = 0; if (beats) applyBeat(0);
     const hit = new Set();
     const seen = new Set();
     const queue = [snap()];
@@ -141,6 +150,16 @@ function __verify(idx, opt) {
       for (let y = y0 + 1; y < L.h; y++) if (isSolidT(tileAt(x, y)) || tileAt(x, y) === T.ONEWAY) { collapseProbes.push({ x: x * TS + 3, y: y * TS - 14, name: `the pit under cracked floor at ${x},${y0}` }); break; }
     }
     setCollapsed(false);
+  }
+  if (L.powerups.some((o) => o.kind === 'wings')) {
+    const idxs = targets.map((t, i) => (main.hit.has(i) ? -1 : i)).filter((i) => i >= 0);
+    if (idxs.length) {
+      const saved = P.char;
+      P.char = { ...saved, ability: 'double' };
+      const r = search(sx, sy, idxs.map((i) => targets[i]), opt.max, true);
+      r.hit.forEach((j) => { main.hit.add(idxs[j]); warnings.push(`${targets[idxs[j]].kind} at ${targets[idxs[j]].tile} needs the wings (or a double jump)`); });
+      P.char = saved;
+    }
   }
   const missed = targets.filter((t, i) => !main.hit.has(i));
   for (const t of missed) {

@@ -10,7 +10,12 @@ function collectGemFx(x, y) {
   gemCombo = gemComboT > 0 ? gemCombo + 1 : 0; gemComboT = 0.7;
   Sound.sfx('gem', gemCombo);
   burst(x, y, '#4ae0ff', 8, 55); burst(x, y, '#ffffff', 4, 30);
+  // a little gem flies up into the HUD counter
+  hudGems.push({ x: x - cam.x, y: y - cam.y, t: 0 });
+  hudPulse = 0.35;
 }
+const hudGems = [];
+let hudPulse = 0;
 function gemsGot() { return level.gems.filter((g) => g.got).length; }
 
 function springContacts() {
@@ -41,7 +46,8 @@ const PlayScreen = {
     Sound.Music.play(level.def.music || THEMES[level.theme].music);
     iris.t = 0; iris.dir = 1; iris.cb = null;
     initWeatherParticles();
-    if (!SPIKE_IMG) { const B = PixBuf(TS, TS); paintSpike((x, y, c) => B.put(x, y, c), '^'); SPIKE_IMG = B.done(); }
+    if (!SPIKE_IMG) { SPIKE_IMG = {}; for (const d of ['^', 'v']) { const B = PixBuf(TS, TS); paintSpike((x, y, c) => B.put(x, y, c), d); SPIKE_IMG[d] = B.done(); } }
+    hudGems.length = 0;
   },
   restartLevel() { this.enter(this.levelIdx); },
 
@@ -65,10 +71,13 @@ const PlayScreen = {
     if (!player.dead) L.time += dt;
     updatePlatforms(dt);
     updatePlayer(dt);
+    updateScarf(dt);
+    updateHazards(dt);
     updateCrumbles(dt); updateCollapses(dt); updateSprings(dt); updateCrushers(dt); updateStals(dt);
     updateRocks(dt); updateBoulders(dt); updateLava(dt); updateWeather(dt); updateEvents(dt);
     updateFinishHop(dt); updatePopSpikes(dt); updateSecrets(dt);
-    updateEnemies(dt); enemyContacts();
+    updateEnemies(dt); enemyContacts(); hazardContacts();
+    updatePowerups(dt);
     this.pickups(dt);
     L.darkness = approach(L.darkness, L.darkTarget, dt * 0.8);
     if (L.sunrise) L.sunrise = Math.min(1, L.sunrise + dt * 0.25);
@@ -79,6 +88,7 @@ const PlayScreen = {
     updateCamera(dt);
     updateFx(dt);
     updateWeatherParticles(dt);
+    updateHudFx(dt);
   },
 
   pickups(dt) {
@@ -86,7 +96,7 @@ const PlayScreen = {
     if (p.dead || p.poof > 0) return;
     for (const g of L.gems) {
       if (g.got || g.mimic) continue;
-      if (rectHit(p.x, p.y, p.w, p.h, g.x, g.y, 12, 10)) { g.got = true; collectGemFx(g.x + 6, g.y + 5); }
+      if (rectHit(p.x - 1, p.y - 1, p.w + 2, p.h + 2, g.x, g.y, 12, 10)) { g.got = true; collectGemFx(g.x + 6, g.y + 5); }
     }
     for (const h of L.hearts) {
       if (h.got || p.hearts >= p.maxHearts) continue;
@@ -145,6 +155,7 @@ const PlayScreen = {
     Save.data.unlocked = Math.max(Save.data.unlocked, Math.min(LEVELS.length, this.levelIdx + 2));
     let unlockedChar = null;
     if (this.levelIdx === LEVELS.length - 1 && !Save.data.secret) { Save.data.secret = true; unlockedChar = 'golden'; }
+    if (firstClear) { const c = CHARACTERS.find((ch) => ch.unlockAt === this.levelIdx); if (c) unlockedChar = c.id; }
     Save.write();
     this.result = {
       time: L.time, best: save.best, newBest: newBest && !firstClear, gems: got.length, total: L.gemTotal, deaths: L.deaths, kills: L.kills,
@@ -155,7 +166,7 @@ const PlayScreen = {
 
   updateCleared(dt) {
     this.clearT += dt;
-    updateFx(dt); updateWeatherParticles(dt);
+    updateFx(dt); updateWeatherParticles(dt); updateHudFx(dt); updateScarf(dt);
     updateEnemies(dt);
     // celebratory hops
     const p = player;
@@ -214,26 +225,148 @@ function drawBackground() {
       if (y > -30 && y < VH) { ctx.globalAlpha = 0.9; ctx.drawImage(c, Math.round(x), Math.round(y)); ctx.globalAlpha = 1; }
     }
   }
-  for (const layer of L.bg.layers) {
+  drawSkyExtras(L, th, t, alt, maxY);
+  L.bg.layers.forEach((layer, li) => {
+    drawLayer(layer, maxY);
+    if (li === 0) drawMidExtras(L, th, t, maxY);
+  });
+  if (L.theme === 'storm' || L.theme === 'summit') {
+    if (!L.sunrise && Math.random() < 0.004) fx.flash = Math.max(fx.flash, 0.2);
+  }
+}
+
+// god rays, birds, aurora, rainbows, distant lightning: life in the sky
+function drawSkyExtras(L, th, t, alt, maxY) {
+  const id = L.theme;
+  if (id === 'meadow' || id === 'ruins' || id === 'sawmill' || id === 'clouds') {
+    // soft sun rays fanning down from the upper right
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 5; i++) {
+      const a = 0.04 + 0.03 * Math.sin(t * 0.6 + i * 1.7);
+      ctx.fillStyle = `rgba(255,240,200,${a})`;
+      const x0 = VW - 90 + i * 14 - cam.x * 0.01;
+      ctx.beginPath(); ctx.moveTo(x0, -10); ctx.lineTo(x0 + 10, -10); ctx.lineTo(x0 - 160 - i * 30, VH + 10); ctx.lineTo(x0 - 210 - i * 30, VH + 10); ctx.fill();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  if (id === 'meadow' || id === 'ruins' || id === 'sawmill') {
+    // a flock of birds crossing the sky
+    for (let i = 0; i < 5; i++) {
+      const bx = ((t * 18 + i * 13 + (i % 2) * 8) % (VW + 200)) - 100 - cam.x * 0.03;
+      const by = 40 + (i % 3) * 6 + Math.sin(t + i) * 3 + (maxY - cam.y) * 0.05;
+      const f = Math.floor(t * 6 + i) % 2;
+      ctx.fillStyle = id === 'sawmill' ? '#6a3040' : '#3a4a7a';
+      ctx.fillRect(Math.round(bx), Math.round(by), 1, 1); ctx.fillRect(Math.round(bx) - 2, Math.round(by) - f, 2, 1); ctx.fillRect(Math.round(bx) + 1, Math.round(by) - f, 2, 1);
+    }
+  }
+  if (id === 'ice' || id === 'summit') {
+    // aurora ribbons
+    ctx.globalCompositeOperation = 'lighter';
+    for (let band = 0; band < 3; band++) {
+      const col = ['90,255,170', '90,200,255', '200,120,255'][band];
+      for (let x = 0; x < VW; x += 2) {
+        const wx = x + cam.x * 0.02;
+        const y = 18 + band * 9 + Math.sin(wx * 0.02 + t * 0.5 + band) * 10 + Math.sin(wx * 0.045 - t * 0.3) * 5;
+        const h = 14 + Math.sin(wx * 0.03 + t + band * 2) * 8;
+        const a = (0.05 + 0.04 * Math.sin(wx * 0.05 + t * 1.3 + band)) * (id === 'ice' ? 0.8 : 1.2);
+        ctx.fillStyle = `rgba(${col},${a})`; ctx.fillRect(x, Math.round(y), 2, Math.round(h));
+      }
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  if (L.bg.rainbow) {
+    ctx.globalAlpha = 0.22;
+    const cx = VW * 0.62 - cam.x * 0.015, cy = VH + 30 + (maxY - cam.y) * 0.04;
+    ['#ff5a7a', '#ffa83a', '#ffe04a', '#6ae06a', '#4ab4ff', '#9a6aff'].forEach((c, i) => {
+      ctx.strokeStyle = c; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(cx, cy, 190 - i * 3, Math.PI, Math.PI * 2); ctx.stroke();
+    });
+    ctx.globalAlpha = 1;
+  }
+  if ((id === 'storm' || id === 'summit') && !L.sunrise) {
+    // far-off forks of lightning
+    L.bgBolt = L.bgBolt || { t: 2 };
+    const b = L.bgBolt;
+    b.t -= STEP;
+    if (b.t <= 0) { b.t = rand(1.5, 4); b.x = rand(20, VW - 20); b.life = 0.25; b.pts = []; let x = b.x; for (let y = 0; y < 90; y += 8) { x += rand(-6, 6); b.pts.push([x, y]); } }
+    if (b.life > 0) {
+      b.life -= STEP;
+      ctx.fillStyle = `rgba(220,230,255,${b.life * 3})`;
+      for (const [x, y] of b.pts) ctx.fillRect(Math.round(x), y, 1, 8);
+      ctx.fillStyle = `rgba(200,210,255,${b.life * 0.5})`; ctx.fillRect(0, 0, VW, 100);
+    }
+  }
+}
+function drawMidExtras(L, th, t, maxY) {
+  const id = L.theme;
+  if (id === 'magma') {
+    // glowing lava falls in the far cave walls (they light up the gloom too)
+    L.bgGlow = [];
+    for (let i = 0; i < 4; i++) {
+      const x = ((i * 137 + 40 - cam.x * 0.15) % (VW + 60) + VW + 60) % (VW + 60) - 30;
+      const top = 10 + (i * 31) % 40;
+      L.bgGlow.push([x + 1, top]);
+      const xi = Math.round(x);
+      ctx.globalCompositeOperation = 'lighter';
+      const gr = ctx.createLinearGradient(xi - 12, 0, xi + 14, 0);
+      gr.addColorStop(0, 'rgba(255,100,20,0)'); gr.addColorStop(0.5, 'rgba(255,110,30,0.22)'); gr.addColorStop(1, 'rgba(255,100,20,0)');
+      ctx.fillStyle = gr; ctx.fillRect(xi - 12, top, 26, VH - top);
+      ctx.globalCompositeOperation = 'source-over';
+      glow('orange', xi + 1, top + 3, 14, 0.9);
+      ctx.fillStyle = '#a8280c'; ctx.fillRect(xi - 2, top + 2, 7, VH - top);
+      ctx.fillStyle = '#ff6a1a'; ctx.fillRect(xi - 1, top + 2, 5, VH - top);
+      ctx.fillStyle = '#ffb04a'; ctx.fillRect(xi, top + 2, 3, VH - top);
+      ctx.fillStyle = '#ff8a2a'; ctx.fillRect(xi - 3, top, 9, 3); ctx.fillStyle = '#ffe08a'; ctx.fillRect(xi - 1, top, 5, 1);
+      for (let y = top + 4; y < VH; y += 7) {
+        const o = Math.floor(y + t * 70 + i * 13) % 14;
+        ctx.fillStyle = '#fff0b0'; ctx.fillRect(xi + (o % 3), top + 4 + ((y - top - 4 + Math.floor(t * 70)) % (VH - top)), 1, 4);
+      }
+    }
+    const g = ctx.createLinearGradient(0, VH - 70, 0, VH);
+    g.addColorStop(0, 'rgba(255,90,20,0)'); g.addColorStop(1, 'rgba(255,90,20,0.22)');
+    ctx.fillStyle = g; ctx.fillRect(0, VH - 70, VW, 70);
+  }
+  if (id === 'sawmill') {
+    // smoke drifting from the mill chimneys
+    for (let i = 0; i < 3; i++) {
+      const x = ((i * 190 + 120 - cam.x * 0.2) % (VW + 120) + VW + 120) % (VW + 120) - 60;
+      for (let k = 0; k < 7; k++) {
+        const age = ((t * 0.4 + k / 7) % 1);
+        ctx.globalAlpha = 0.25 * (1 - age);
+        ctx.fillStyle = '#f0d8d0';
+        circle(x + age * 30 + Math.sin(t + k) * 3, VH - 70 - age * 70 + (maxY - cam.y) * 0.25, Math.round(3 + age * 8));
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+  if (id === 'forest') {
+    // shafts of light through the canopy
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 4; i++) {
+      const x0 = ((i * 160 + 60 - cam.x * 0.18) % (VW + 200) + VW + 200) % (VW + 200) - 100;
+      ctx.fillStyle = `rgba(200,255,200,${0.05 + 0.03 * Math.sin(t * 0.8 + i)})`;
+      ctx.beginPath(); ctx.moveTo(x0, 0); ctx.lineTo(x0 + 18, 0); ctx.lineTo(x0 - 40, VH); ctx.lineTo(x0 - 80, VH); ctx.fill();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+}
+
+function drawLayer(layer, maxY) {
+  {
     const W = layer.c.width, H = layer.c.height;
     let y;
     if (layer.anchor === 'center') y = Math.round((VH - H) / 2 - ((cam.y - maxY / 2) * layer.f) % H);
     else y = Math.round(VH - H - 58 + layer.yOff + (maxY - cam.y) * layer.f * 1.2);
-    if (y >= VH) continue;
+    if (y >= VH) return;
     const ox = -Math.floor(((cam.x * layer.f) % W + W) % W);
     for (let x = ox; x < VW; x += W) {
       ctx.drawImage(layer.c, x, y);
       if (layer.anchor === 'center') { ctx.drawImage(layer.c, x, y - H); ctx.drawImage(layer.c, x, y + H); }
     }
     // fill below a bottom-anchored layer so it never shows sky underneath
-    if (layer.anchor !== 'center' && y + H < VH) {
-      const img = layer.c.getContext('2d');
+    if (layer.anchor !== 'center' && !layer.noFill && y + H < VH) {
       ctx.fillStyle = layer.fill || (layer.fill = sampleBottom(layer.c));
       ctx.fillRect(0, y + H, VW, VH - y - H);
     }
-  }
-  if (L.theme === 'storm' || L.theme === 'summit') {
-    if (!L.sunrise && Math.random() < 0.004) fx.flash = Math.max(fx.flash, 0.2);
   }
 }
 function sampleBottom(c) {
@@ -276,7 +409,13 @@ function renderWorld() {
     const j = c.state === 'shake' ? (Math.floor(t * 40) % 2 ? 1 : -1) : 0;
     c.cells.forEach(([x, y], i) => ctx.drawImage(c.tiles[i], x * TS + j, y * TS));
   }
-  for (const s of L.popSpikes) if (s.t <= 0) ctx.drawImage(SPIKE_IMG, 0, 0, 16, 16, s.tx * TS, s.ty * TS + Math.round((1 - s.up) * 9), 16, 16 - Math.round((1 - s.up) * 9));
+  for (const s of L.popSpikes) {
+    if (s.t > 0) continue;
+    const h = 16 - Math.round((1 - s.up) * 9);
+    if (s.dir === 'v') ctx.drawImage(SPIKE_IMG.v, 0, 16 - h, 16, h, s.tx * TS, s.ty * TS, 16, h);
+    else ctx.drawImage(SPIKE_IMG['^'], 0, 0, 16, h, s.tx * TS, s.ty * TS + 16 - h, 16, h);
+  }
+  drawHazardsBack(t);
   for (const g of L.gates) if (g.closed) { ctx.fillStyle = '#2a2438'; for (let i = 1; i < 16; i += 4) ctx.fillRect(g.x + i, g.y, 2, 16); ctx.fillStyle = '#7d7690'; ctx.fillRect(g.x, g.y + 3, 16, 2); ctx.fillRect(g.x, g.y + 11, 16, 2); }
   for (const c of L.crumbles) {
     if (c.state === 'gone') continue;
@@ -293,6 +432,7 @@ function renderWorld() {
   if (L.finish) drawFinish(L.finish, t);
   for (const g of L.gems) {
     if (g.got || g.mimic) continue;
+    if (onScreen(g.x + 6, g.y + 5, 20)) glow('cyan', g.x + 6, g.y + 5 + Math.sin(t * 3 + g.bob) * 1.5, 13, L.ghost.has(g.id) ? 0.25 : 0.55);
     const f = ART.gem[Math.floor(t * 8 + g.bob) % 4];
     const ghost = L.ghost.has(g.id);
     if (ghost) ctx.globalAlpha = 0.45;
@@ -300,7 +440,8 @@ function renderWorld() {
     ctx.globalAlpha = 1;
     if (Math.random() < 0.01) addParticle(g.x + rand(0, 12), g.y + rand(0, 10), { col: '#ffffff', life: 0.4, g: 0, vy: -8 });
   }
-  for (const h of L.hearts) if (!h.got) spr(ART.heart, h.x, h.y + Math.round(Math.sin(t * 4) * 1.5));
+  for (const h of L.hearts) if (!h.got) { glow('pink', h.x + 4, h.y + 4, 12, 0.5); spr(ART.heart, h.x, h.y + Math.round(Math.sin(t * 4) * 1.5)); }
+  drawPowerups(t);
   for (const k of L.crushers) {
     const j = k.state === 'warn' ? (Math.floor(t * 40) % 2 ? 1 : -1) : 0;
     ctx.fillStyle = '#4a4458'; for (let y = k.y0 - 4; y > k.y0 - 40 && y >= 0; y -= 4) ctx.fillRect(k.x + 15, y, 2, 2);
@@ -316,8 +457,10 @@ function renderWorld() {
     ctx.globalAlpha = 0.3 + Math.sin(D.t * 4) * 0.1; ctx.fillStyle = '#ffd84a'; circle(D.x + 8, D.y + 7, 14); ctx.globalAlpha = 1;
     spr(ART.dawnGem, D.x, D.y + Math.sin(D.t * 3) * 2);
   }
+  drawPlayerShadow();
   drawEnemies();
   drawPlayer();
+  drawHazardsFront(t);
   for (const r of L.rocks) {
     if (r.kind === 'debris') { ctx.globalAlpha = clamp(r.life, 0, 1); ctx.save(); ctx.translate(r.x + 8, r.y + 8); ctx.rotate(r.rot); ctx.drawImage(r.img, -8, -8); ctx.restore(); ctx.globalAlpha = 1; continue; }
     if (r.warn > 0) { if (Math.floor(r.warn * 10) % 2) Font.draw('!', r.x + 4, r.y + 4, { color: '#ff3a5a', outline: true }); continue; }
@@ -337,10 +480,13 @@ function renderWorld() {
     ctx.fillStyle = p.col; ctx.fillRect(Math.round(p.x), Math.round(p.y), p.size, p.size);
   }
   ctx.globalAlpha = 1;
+  for (const p of fx.particles) if (p.glow) glow('gold', p.x, p.y, 4, clamp(p.life / p.max, 0, 1) * 0.6);
+  ctx.globalAlpha = 1;
   for (const tx of fx.texts) Font.draw(tx.text, tx.x, tx.y, { color: tx.col, align: 'center', outline: true, alpha: clamp(tx.t * 2, 0, 1) });
   ctx.restore();
   drawLighting(cx, cy);
   drawWeatherParticles();
+  drawVignette();
   if (fx.flash > 0) { ctx.globalAlpha = Math.min(0.85, fx.flash); ctx.fillStyle = fx.flashCol; ctx.fillRect(0, 0, VW, VH); ctx.globalAlpha = 1; }
 }
 
@@ -410,11 +556,13 @@ function drawBolts(cx, cy) {
   for (const b of level.weather.bolts) {
     if (b.t > 0) {
       if (Math.floor(b.t * 12) % 2 === 0) {
-        ctx.fillStyle = 'rgba(255,255,160,0.18)'; ctx.fillRect(Math.round(b.x) - 8, cy, 16, b.ground - cy);
+        const top = b.top != null ? b.top : cy;
+        ctx.fillStyle = 'rgba(255,255,160,0.18)'; ctx.fillRect(Math.round(b.x) - 8, top, 16, b.ground - top);
         ctx.fillStyle = '#ffd84a'; ctx.fillRect(Math.round(b.x) - 4, b.ground - 3, 8, 2); ctx.fillRect(Math.round(b.x) - 1, b.ground - 9, 2, 5);
       }
     } else if (b.strike > 0) {
-      if (!b.pts) { b.pts = []; for (let y = cy - 10; y < b.ground; y += 10) b.pts.push([b.x + rand(-5, 5), y]); b.pts.push([b.x, b.ground]); }
+      if (!b.pts) { b.pts = []; for (let y = b.top != null ? b.top : cy - 10; y < b.ground; y += 10) b.pts.push([b.x + rand(-5, 5), y]); b.pts.push([b.x, b.ground]); }
+      glow('gold', b.x, b.ground - 6, 30, b.strike * 3);
       for (let i = 0; i < b.pts.length - 1; i++) {
         const [x0, y0] = b.pts[i], [x1, y1] = b.pts[i + 1];
         for (let s = 0; s <= 10; s++) {
@@ -457,6 +605,11 @@ function drawLighting(cx, cy) {
   for (const b of L.weather.bolts) if (b.strike > 0) hole(b.x, b.ground - 60, 200);
   for (const e of enemies) if (e.alive && (e.type === 'bat' || e.type === 'boss')) hole(e.x + e.w / 2, e.y + 4, 22, 0.4);
   for (const p of fx.particles) if (p.glow) hole(p.x, p.y, 12, 0.5);
+  for (const o of L.powerups) if (!o.got) hole(o.x + 6, o.y + 6, 50, 0.9);
+  if (L.bgGlow) for (const [sx, top] of L.bgGlow) for (let y = top + 10; y < VH; y += 26) hole(cx + sx, cy + y, 40, 0.55);
+  for (const f of L.firebars) hole(f.x, f.y, 90, 0.7);
+  for (const e of enemies) if (e.alive && (e.type === 'leaper' || e.type === 'ghost') && e.state !== 'wait') hole(e.x + e.w / 2, e.y + 5, 40, 0.6);
+  if (starOn()) hole(player.x + 5, player.y + 7, 120, 1);
   if (L.dawnGem) hole(L.dawnGem.x + 8, L.dawnGem.y + 7, 90);
   ctx.drawImage(lightCanvas, 0, 0, VW, VH);
 }
@@ -468,7 +621,7 @@ let lastCam = { x: 0, y: 0 };
 function initWeatherParticles() {
   fx.weather = [];
   const kind = THEMES[level.theme].weather;
-  const n = { rain: 70, snow: 60, leaves: 14, petals: 16, fireflies: 18, spores: 26, embers: 30 }[kind] || 0;
+  const n = { rain: 70, snow: 60, leaves: 14, petals: 16, fireflies: 18, spores: 26, embers: 30, autumn: 22, sparkles: 24 }[kind] || 0;
   for (let i = 0; i < n; i++) fx.weather.push(newWeatherP(kind, true));
   lastCam = { x: cam.x, y: cam.y };
 }
@@ -487,8 +640,8 @@ function updateWeatherParticles(dt) {
     switch (p.kind) {
       case 'rain': p.x += (-60 + gust * 200) * dt; p.y += 300 * p.z * dt; break;
       case 'snow': p.x += (Math.sin(p.t * 1.5) * 12 + gust * 160) * dt; p.y += 26 * p.z * dt; break;
-      case 'leaves': case 'petals': p.x += (20 + Math.sin(p.t) * 20 + gust * 160) * dt; p.y += (18 + Math.sin(p.t * 2) * 10) * p.z * dt; break;
-      case 'fireflies': p.x += Math.sin(p.t * 0.9) * 10 * dt; p.y += Math.cos(p.t * 1.3) * 8 * dt; break;
+      case 'leaves': case 'petals': case 'autumn': p.x += (20 + Math.sin(p.t) * 20 + gust * 160) * dt; p.y += (18 + Math.sin(p.t * 2) * 10) * p.z * dt; break;
+      case 'fireflies': case 'sparkles': p.x += Math.sin(p.t * 0.9) * 10 * dt; p.y += Math.cos(p.t * 1.3) * 8 * dt; break;
       case 'spores': p.x += Math.sin(p.t) * 6 * dt; p.y -= 8 * p.z * dt; break;
       case 'embers': p.x += Math.sin(p.t * 2) * 10 * dt; p.y -= 30 * p.z * dt; break;
     }
@@ -507,6 +660,8 @@ function drawWeatherParticles() {
       case 'snow': ctx.fillStyle = p.z > 0.75 ? '#ffffff' : 'rgba(255,255,255,0.6)'; ctx.fillRect(x, y, p.z > 0.8 ? 2 : 1, p.z > 0.8 ? 2 : 1); break;
       case 'leaves': ctx.fillStyle = Math.sin(p.t * 3) > 0 ? '#7ac850' : '#d8c040'; ctx.fillRect(x, y, 2, 1); ctx.fillRect(x + (Math.sin(p.t * 3) > 0 ? 1 : 0), y + 1, 1, 1); break;
       case 'petals': ctx.fillStyle = '#ffb0c8'; ctx.fillRect(x, y, 2, 1); break;
+      case 'autumn': { const c = ['#ff8a2a', '#e8434f', '#ffd84a', '#c8602a'][Math.floor(p.z * 40) % 4]; ctx.fillStyle = c; const f = Math.sin(p.t * 3) > 0; ctx.fillRect(x, y, f ? 3 : 1, f ? 1 : 2); ctx.fillRect(x + 1, y + (f ? 1 : 0), 1, 1); break; }
+      case 'sparkles': { const a = Math.max(0, Math.sin(p.t * 2.2)); if (a < 0.1) break; ctx.globalAlpha = a; ctx.fillStyle = p.z > 0.7 ? '#ffffff' : '#ffd0f0'; ctx.fillRect(x, y, 1, 1); if (a > 0.7) { ctx.fillRect(x - 1, y, 3, 1); ctx.fillRect(x, y - 1, 1, 3); } ctx.globalAlpha = 1; break; }
       case 'fireflies': { const a = (Math.sin(p.t * 3) + 1) / 2; ctx.globalAlpha = a; ctx.fillStyle = '#e8ff8a'; ctx.fillRect(x, y, 1, 1); ctx.globalAlpha = a * 0.3; ctx.fillRect(x - 1, y - 1, 3, 3); ctx.globalAlpha = 1; break; }
       case 'spores': ctx.fillStyle = 'rgba(190,160,255,0.6)'; ctx.fillRect(x, y, 1, 1); break;
       case 'embers': ctx.fillStyle = p.z > 0.7 ? '#ffd25a' : '#ff7a1a'; ctx.fillRect(x, y, 1, 1); break;
@@ -519,25 +674,56 @@ function drawWeatherParticles() {
 //  HUD
 // ---------------------------------------------------------------------
 const HUD_PAUSE = { x: VW - 17, y: 3, w: 14, h: 13 };
+function updateHudFx(dt) {
+  hudPulse = Math.max(0, hudPulse - dt);
+  for (let i = hudGems.length - 1; i >= 0; i--) { const g = hudGems[i]; g.t += dt * 2.2; if (g.t >= 1) hudGems.splice(i, 1); }
+}
+
+// soft dark corners: focuses the eye and makes every scene feel richer
+let _vignette = null;
+function drawVignette() {
+  if (!_vignette) {
+    _vignette = newCanvas(VW, VH);
+    const g = _vignette.getContext('2d');
+    const gr = g.createRadialGradient(VW / 2, VH / 2, VH * 0.42, VW / 2, VH / 2, VW * 0.62);
+    gr.addColorStop(0, 'rgba(8,6,20,0)'); gr.addColorStop(1, 'rgba(8,6,20,0.38)');
+    g.fillStyle = gr; g.fillRect(0, 0, VW, VH);
+  }
+  ctx.drawImage(_vignette, 0, 0);
+}
+
 function renderHUD() {
   const p = player, L = level;
+  // backing plate
+  const plateW = Math.max(p.maxHearts * 11 + 6, 46);
+  ctx.fillStyle = 'rgba(12,8,24,0.42)'; ctx.fillRect(2, 2, plateW, 26); ctx.fillRect(3, 1, plateW - 2, 28);
   // hearts
   for (let i = 0; i < p.maxHearts; i++) {
     const s = i < p.hearts ? ART.heart : ART.heartEmpty;
     const bob = i < p.hearts && p.hearts === 1 ? Math.round(Math.sin(L.time * 10) * 1) : 0;
-    spr(s, 5 + i * 11, 5 + bob);
+    spr(s, 5 + i * 11, 4 + bob);
   }
-  // gems
+  // gems (the counter pops when a gem lands in it)
   const got = gemsGot();
-  spr(ART.gem[0], 5, 16);
-  Font.draw(`${got}/${L.gemTotal}`, 20, 18, { color: got >= L.gemTotal ? '#ffd84a' : '#bff6ff', outline: true });
+  const pop = hudPulse > 0 ? Math.round(hudPulse * 4) : 0;
+  if (pop) glow('cyan', 11, 20, 12, hudPulse * 2);
+  spr(ART.gem[0], 5, 15 - pop);
+  Font.draw(`${got}/${L.gemTotal}`, 20, 17, { color: got >= L.gemTotal ? '#ffd84a' : hudPulse > 0 ? '#ffffff' : '#bff6ff', outline: true });
+  for (const g of hudGems) {
+    const k = easeInOut(g.t);
+    const x = lerp(g.x, 11, k), y = lerp(g.y, 20, k) - Math.sin(k * Math.PI) * 24;
+    spr(ART.gem[Math.floor(g.t * 12) % 4], x - 6, y - 5);
+  }
   // power indicator
   const pw = p.char.ability;
   let label = null, ready = true;
   if (pw === 'dash' || pw === 'all') { label = 'DASH'; ready = p.canDash && p.dashCd <= 0; }
   if (pw === 'double') { label = 'FLUTTER'; ready = p.canDouble || p.onGround; }
   if (pw === 'slam') { label = 'SLAM'; ready = !p.onGround && !p.slam; }
-  if (label) Font.draw(label, 6, 30, { color: ready ? '#ffd84a' : '#6a6080', outline: true });
+  if (pw === 'roll') { label = 'ROLL'; ready = p.rollCd <= 0; }
+  if (pw === 'glide') { label = 'GLIDE'; ready = !p.onGround; }
+  if (label) Font.draw(label, 6, 32, { color: ready ? '#ffd84a' : '#6a6080', outline: true });
+  drawPowerHUD(5, label ? 43 : 32);
   // timer & deaths
   const rx = touchShown ? VW - 40 : HUD_PAUSE.x - 5;
   if (Save.data.settings.timer) Font.draw(formatTime(L.time), rx, 5, { color: '#ffffff', align: 'right', outline: true });
@@ -554,9 +740,15 @@ function renderHUD() {
   // level name intro
   if (PlayScreen.introT > 0 && Screens.top === PlayScreen) {
     const a = clamp(PlayScreen.introT, 0, 1) * clamp((3.2 - PlayScreen.introT) * 3, 0, 1);
-    ctx.globalAlpha = a * 0.7; ctx.fillStyle = '#100c1c'; ctx.fillRect(0, 44, VW, 36); ctx.globalAlpha = 1;
-    Font.draw(`LEVEL ${L.idx + 1}`, VW / 2, 49, { color: '#ffd84a', align: 'center', outline: true, alpha: a });
-    Font.draw(L.def.name, VW / 2, 60, { color: '#ffffff', align: 'center', outline: true, scale: 2, alpha: a });
+    const slide = easeOutCubic(clamp((3.2 - PlayScreen.introT) * 2.5, 0, 1));
+    const tc = (typeof THEME_COL !== 'undefined' && THEME_COL[L.theme]) || '#ffd84a';
+    ctx.globalAlpha = a * 0.75; ctx.fillStyle = '#100c1c'; ctx.fillRect(0, 40, VW, 46);
+    ctx.globalAlpha = a; ctx.fillStyle = tc;
+    ctx.fillRect(Math.round(VW / 2 - 90 * slide), 40, Math.round(180 * slide), 1); ctx.fillRect(Math.round(VW / 2 - 90 * slide), 85, Math.round(180 * slide), 1);
+    ctx.globalAlpha = 1;
+    Font.draw(`LEVEL ${L.idx + 1}`, VW / 2, 45, { color: tc, align: 'center', outline: true, alpha: a });
+    Font.draw(L.def.name, VW / 2 + Math.round((1 - slide) * 40), 56, { color: '#ffffff', align: 'center', outline: true, scale: 2, alpha: a });
+    Font.draw((L.def.blurb || '').split('\n').join(' '), VW / 2, 74, { color: '#c8c0d8', align: 'center', outline: true, alpha: a * slide });
   }
   // boss bar
   const boss = enemies.find((e) => e.type === 'boss' && e.state !== 'sleep' && e.alive);

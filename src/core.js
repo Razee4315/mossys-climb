@@ -72,6 +72,7 @@ const Save = {
   defaults() {
     return {
       version: 2,
+      layout: 10,
       unlocked: 1,
       char: 'mossy',
       secret: false,
@@ -86,6 +87,15 @@ const Save = {
     try { d = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); } catch (e) { d = null; }
     const def = this.defaults();
     if (!d || typeof d !== 'object') d = def;
+    // saves from the 8-level mountain: move progress onto the 10-level one
+    if (d && typeof d === 'object' && !d.layout) {
+      const MAP8 = [0, 1, 2, 4, 5, 6, 8, 9], old = d.levels || {}, lv = {};
+      for (const k in old) { const n = MAP8[k]; if (n != null) lv[n] = { ...old[k], gems: [], stars: [!!old[k].done, false, !!(old[k].stars && old[k].stars[2])] }; }
+      d.levels = lv;
+      d.unlocked = Math.max(1, (MAP8[Math.max(0, (d.unlocked || 1) - 1)] || 0) + 1);
+      d.layout = 10;
+    }
+    if (d && typeof d === 'object' && d.char && !['mossy', 'pip', 'ember', 'bruno', 'luna', 'quill', 'golden'].includes(d.char)) d.char = 'mossy';
     for (const k in def) if (!(k in d)) d[k] = def[k];
     for (const k in def.settings) if (!(k in d.settings)) d.settings[k] = def.settings[k];
     this.data = d;
@@ -323,5 +333,5 @@ const touchUI = () => Input.device === 'touch';
 // the on-screen power button only exists for climbers whose power is a button press
 function powerButtonLabel(id) {
   const c = charById(id || (typeof player !== 'undefined' && player.char ? player.char.id : Save.data.char));
-  return { dash: 'DASH', slam: 'SLAM', all: 'DASH' }[c.ability] || null;
+  return { dash: 'DASH', slam: 'SLAM', all: 'DASH', roll: 'ROLL' }[c.ability] || null;
 }

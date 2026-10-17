@@ -16,6 +16,12 @@ function makeEnemy(type, tx, ty, extra = {}) {
     case 'slime': return { ...b, x: px + 2, y: py + 8, w: 12, h: 8, t: 0.8 + rand(0, 0.8) };
     case 'mimic': return { ...b, x: px + 2, y: py + 6, w: 12, h: 10, state: 'hidden', harmful: false, stompable: false };
     case 'boss': return { ...b, x: px, y: py, w: 26, h: 22, hp: 3, state: 'sleep', awake: false, phase: 1, stompable: false, dives: 0, hx: px, hy: py };
+    case 'boar': return { ...b, x: px + 1, y: py + 5, w: 14, h: 11, speed: 24, state: 'walk' };
+    case 'bomb': return { ...b, x: px + 2, y: py + 6, w: 11, h: 10, speed: 22, state: 'walk' };
+    case 'ghost': return { ...b, x: px + 1, y: py + 2, w: 12, h: 12, stompable: false, shy: false, alpha: 0.9, hx: px + 1, hy: py + 2 };
+    case 'leaper': return { ...b, x: px + 2, y: py + 4, w: 10, h: 10, stompable: false, hy: py + 4, state: 'wait', t: rand(0.6, 2.2) };
+    case 'cloudy': return { ...b, x: px - 2, y: py + 2, w: 18, h: 10, hx: px - 2, hy: py + 2, state: 'drift', t: rand(1.5, 2.5) };
+    case 'penguin': return { ...b, x: px + 2, y: py + 4, w: 12, h: 12, speed: 18, state: 'walk', t: 0 };
   }
   throw new Error('unknown enemy ' + type);
 }
@@ -41,9 +47,22 @@ function killEnemy(e, how) {
   if (e.type === 'boss') return;
   e.alive = false; e.dying = true; e.vy = -170; e.vx = how === 'slam' ? rand(-60, 60) : rand(-30, 30);
   level.kills++; stats.kills++;
-  const col = { beetle: '#e8434f', spiny: '#a8693f', bat: '#8a64e0', plant: '#ff5a7a', wasp: '#ffd84a', waspV: '#ffd84a', slime: '#3ad1b5' }[e.type] || '#ffffff';
+  const col = { beetle: '#e8434f', spiny: '#a8693f', bat: '#8a64e0', plant: '#ff5a7a', wasp: '#ffd84a', waspV: '#ffd84a', slime: '#3ad1b5', boar: '#c08a6a', bomb: '#3c3c62', ghost: '#f2eeff', leaper: '#ff7a1a', cloudy: '#c8d0ea', penguin: '#2c3450' }[e.type] || '#ffffff';
   burst(e.x + e.w / 2, e.y + e.h / 2, col, 12, 80);
+  burst(e.x + e.w / 2, e.y + e.h / 2, '#ffffff', 5, 50);
   if (how !== 'lava' && how !== 'crush') Sound.sfx('stomp');
+  if (how === 'star' || how === 'roll') { Sound.sfx('kapow'); floatText(e.x + e.w / 2, e.y - 4, pick(['POW!', 'BAM!', 'WHAM!', 'BONK!']), '#ffd84a'); }
+}
+
+// chained stomps without touching the ground climb in pitch and praise
+function stompCombo(e) {
+  const p = player;
+  p.combo = (p.combo || 0) + 1;
+  if (p.combo >= 2) {
+    const words = ['', '', 'DOUBLE!', 'TRIPLE!', 'SUPER!', 'AMAZING!', 'UNSTOPPABLE!'];
+    floatText(e.x + e.w / 2, e.y - 8, words[Math.min(p.combo, 6)] || 'WOW!', ['#7aff9a', '#4ae0ff', '#ffd84a', '#ff7aa8'][p.combo % 4]);
+    Sound.sfx('combo', p.combo);
+  }
 }
 
 function walk(e, dt) {
@@ -112,8 +131,14 @@ function updateEnemies(dt) {
       }
       case 'mimic': updateMimic(e, dt, px, py, ex, ey); break;
       case 'boss': updateBoss(e, dt, px, py); break;
+      case 'boar': updateBoar(e, dt, px, py, ex, ey); break;
+      case 'bomb': updateBomb(e, dt); break;
+      case 'ghost': updateGhost(e, dt, px, py, ex, ey); break;
+      case 'leaper': updateLeaper(e, dt); break;
+      case 'cloudy': updateCloudy(e, dt, px, py, ex, ey); break;
+      case 'penguin': updatePenguin(e, dt, px, py, ex, ey); break;
     }
-    if (e.y > level.h * TS + 32) { e.alive = false; enemies.splice(i, 1); }
+    if (e.y > level.h * TS + 32 && e.type !== 'leaper') { e.alive = false; enemies.splice(i, 1); }
   }
   updateProjectiles(dt);
 }
@@ -163,6 +188,126 @@ function updateMimic(e, dt, px, py, ex, ey) {
   moveX(e, e.dir * speed * dt);
 }
 
+// Boar: trots about, spots you, scrapes a hoof... and CHARGES
+function updateBoar(e, dt, px, py, ex, ey) {
+  e.t += dt;
+  if (e.state === 'walk') {
+    walk(e, dt);
+    const ahead = (px - ex) * e.dir > 0;
+    if (!player.dead && ahead && Math.abs(px - ex) < 150 && Math.abs(py - ey) < 22) {
+      e.state = 'alert'; e.t = 0; Sound.sfx('snort'); floatText(ex, e.y - 6, '!', '#ff3a5a');
+    }
+  } else if (e.state === 'alert') {
+    e.vy = Math.min(e.vy + 900 * dt, 300); if (moveY(e, e.vy * dt)) e.vy = 0;
+    if (Math.random() < 0.4) addParticle(e.x + e.w / 2 - e.dir * 6, e.y + e.h, { vx: -e.dir * rand(20, 60), vy: rand(-30, -5), col: '#d8c8a8', life: 0.35 });
+    if (e.t > 0.55) { e.state = 'charge'; e.t = 0; }
+  } else if (e.state === 'charge') {
+    e.vy = Math.min(e.vy + 900 * dt, 300); if (moveY(e, e.vy * dt)) e.vy = 0;
+    const g = groundUnder(e);
+    const ahead = e.dir > 0 ? e.x + e.w : e.x - 1;
+    const edge = g && !standable(ahead + e.dir * 2, e.y + e.h);
+    if (Math.random() < 0.6) addParticle(e.x + e.w / 2 - e.dir * 7, e.y + e.h, { vx: -e.dir * rand(30, 80), vy: rand(-40, -10), col: '#d8c8a8', life: 0.3 });
+    if (edge) { e.state = 'skid'; e.t = 0; e.vx = e.dir * 60; }
+    else if (moveX(e, e.dir * 150 * dt)) { e.state = 'dizzy'; e.t = 0; addShake(3); Sound.sfx('slam'); burst(ahead, e.y + 5, '#ffffff', 10, 60); }
+  } else if (e.state === 'skid') {
+    e.vx = approach(e.vx, 0, 300 * dt);
+    const ahead = e.dir > 0 ? e.x + e.w : e.x - 1;
+    if (standable(ahead + e.dir, e.y + e.h)) moveX(e, e.vx * dt); else e.vx = 0;
+    if (Math.random() < 0.8) addParticle(e.x + e.w / 2 + e.dir * 6, e.y + e.h, { vx: rand(-20, 20), vy: rand(-30, -5), col: '#d8c8a8', life: 0.3 });
+    if (e.vx === 0) { e.state = 'dizzy'; e.t = 0.6; }
+  } else if (e.state === 'dizzy') {
+    if (e.t > 1.3) { e.state = 'walk'; e.t = 0; e.dir *= -1; }
+  }
+}
+
+// Bomb beetle: stomp it and the fuse lights. Kick it, or RUN.
+function updateBomb(e, dt) {
+  if (e.state === 'walk') { walk(e, dt); return; }
+  e.t -= dt;
+  e.vy = Math.min(e.vy + 900 * dt, 300);
+  if (moveY(e, e.vy * dt)) e.vy = 0;
+  // a kicked bomb slides until it thuds into something, then sits there fizzing
+  if (e.vx) { if (moveX(e, e.vx * dt)) { e.vx = 0; Sound.sfx('land'); addShake(1); } e.vx = approach(e.vx, 0, 40 * dt); }
+  if (Math.random() < 0.6) addParticle(e.x + 9, e.y - 2, { col: pick(['#ffd84a', '#ff7a1a', '#ffffff']), vy: rand(-40, -10), vx: rand(-15, 15), life: 0.3, g: 60, glow: true });
+  const rate = e.t < 0.6 ? 16 : 8;
+  if (Math.floor(e.t * rate) !== Math.floor((e.t + dt) * rate)) Sound.sfx('fuse');
+  if (e.t <= 0) {
+    e.alive = false; enemies.splice(enemies.indexOf(e), 1);
+    level.kills++; stats.kills++;
+    explode(e.x + e.w / 2, e.y + e.h / 2, 34);
+  }
+}
+
+// Ghost: shy when you look at it, creeps closer when you turn your back
+function updateGhost(e, dt, px, py, ex, ey) {
+  const facingIt = Math.sign(ex - px) === player.facing || Math.abs(ex - px) < 4;
+  e.shy = facingIt && !player.dead;
+  const d = Math.hypot(px - ex, py - ey) || 1;
+  if (d > 260) { e.vx = approach(e.vx, 0, 60 * dt); e.vy = approach(e.vy, 0, 60 * dt); }
+  else if (e.shy) { e.vx = approach(e.vx, 0, 120 * dt); e.vy = approach(e.vy, Math.sin(e.anim * 2) * 6, 60 * dt); }
+  else {
+    const sp = 38;
+    e.vx = approach(e.vx, ((px - ex) / d) * sp, 80 * dt); e.vy = approach(e.vy, ((py - ey) / d) * sp, 80 * dt);
+    e.dir = px < ex ? -1 : 1;
+    if (Math.random() < 0.004) Sound.sfx('boo');
+  }
+  e.x += e.vx * dt; e.y += e.vy * dt;
+  e.alpha = approach(e.alpha, e.shy ? 0.5 : 0.92, dt * 3);
+}
+
+// Lava leaper: bursts out of the lava in a high arc
+function updateLeaper(e, dt) {
+  if (e.state === 'wait') {
+    e.y = e.hy + 14;
+    e.t -= dt;
+    if (e.t < 0.5 && Math.random() < 0.5) addParticle(e.x + rand(0, 10), e.hy + 2, { col: pick(['#ffd25a', '#ff7a1a']), vy: rand(-60, -20), life: 0.4, g: 200 });
+    if (e.t <= 0) { e.state = 'jump'; e.vy = -(e.power || 300); Sound.sfx('splash'); burst(e.x + 5, e.hy + 4, '#ffd25a', 10, 60); }
+    return;
+  }
+  e.vy += 640 * dt; e.y += e.vy * dt;
+  if (Math.random() < 0.5) addParticle(e.x + rand(2, 8), e.y + 10, { col: pick(['#ffd25a', '#ff7a1a', '#c82a10']), vy: rand(0, 20), life: 0.35, g: 0 });
+  if (e.vy > 0 && e.y > e.hy + 14) { e.state = 'wait'; e.t = rand(1.2, 2.4); burst(e.x + 5, e.hy + 4, '#ff7a1a', 8, 50); }
+}
+
+// Grumble cloud: follows overhead and calls down lightning (it's stompable!)
+function updateCloudy(e, dt, px, py, ex, ey) {
+  const near = Math.abs(px - ex) < 280 && py > e.y && !player.dead;
+  // it stalks you, but only within its own patch of sky
+  if (near) e.x = clamp(approach(e.x, px - e.w / 2, (e.state === 'charge' ? 16 : 56) * dt), e.hx - 200, e.hx + 200);
+  e.y = e.hy + Math.sin(e.anim * 2) * 3;
+  e.dir = px < ex ? -1 : 1;
+  if (!near) return;
+  e.t -= dt;
+  if (e.state === 'drift' && e.t <= 0.75) { e.state = 'charge'; Sound.sfx('zap'); }
+  if (e.state === 'charge') {
+    if (Math.random() < 0.6) addParticle(e.x + rand(2, 16), e.y + 10, { col: '#ffff8a', vy: rand(20, 60), life: 0.2, g: 0, glow: true });
+    if (e.t <= 0) {
+      e.state = 'drift'; e.t = rand(2.6, 3.4);
+      const bx = e.x + e.w / 2;
+      level.weather.bolts.push({ x: bx, ground: groundYAt(bx, e.y + e.h + 2), t: 0.6, strike: 0, top: e.y + e.h });
+    }
+  }
+}
+
+// Penguin: waddles, then belly-slides at you
+function updatePenguin(e, dt, px, py, ex, ey) {
+  e.t -= dt;
+  if (e.state === 'walk') {
+    walk(e, dt);
+    if (!player.dead && e.t <= 0 && Math.abs(px - ex) < 140 && Math.abs(py - ey) < 24) {
+      e.state = 'slide'; e.t = 2.2; e.dir = px < ex ? -1 : 1; e.vy = -120; Sound.sfx('whee');
+    }
+  } else {
+    e.vy = Math.min(e.vy + 900 * dt, 300); if (moveY(e, e.vy * dt)) e.vy = 0;
+    const g = groundUnder(e);
+    const ahead = e.dir > 0 ? e.x + e.w : e.x - 1;
+    if (g && !standable(ahead + e.dir * 2, e.y + e.h)) e.dir *= -1;
+    if (moveX(e, e.dir * 120 * dt)) { e.dir *= -1; Sound.sfx('bounce'); }
+    if (g && Math.random() < 0.4) addParticle(e.x + e.w / 2 - e.dir * 6, e.y + e.h, { vx: -e.dir * rand(20, 50), vy: rand(-30, -5), col: '#ffffff', life: 0.3 });
+    if (e.t <= 0) { e.state = 'walk'; e.t = 1.5; }
+  }
+}
+
 // ---------------------------------------------------------------------
 function updateProjectiles(dt) {
   const P = level.projectiles;
@@ -172,11 +317,16 @@ function updateProjectiles(dt) {
     if (p.kind === 'wave' && Math.random() < 0.5) addParticle(p.x + 5, p.y + 6, { col: '#bfe4ff', life: 0.25, vy: rand(-40, -10), g: 0 });
     const hitWall = p.kind === 'wave' ? solidRect(p.x + 2, p.y, p.w - 4, p.h - 2) : solidRect(p.x, p.y, p.w, p.h);
     if (hitWall || p.life <= 0) {
-      burst(p.x + p.w / 2, p.y + p.h / 2, p.kind === 'seed' ? '#ffcf5a' : '#bfe4ff', 5, 40);
+      burst(p.x + p.w / 2, p.y + p.h / 2, p.kind === 'seed' ? '#ffcf5a' : p.kind === 'ball' ? '#6a6a90' : '#bfe4ff', 5, 40);
+      if (p.kind === 'ball') Sound.sfx('crack');
       P.splice(i, 1); continue;
     }
-    if (!player.dead && rectHit(player.x + 1, player.y + 1, player.w - 2, player.h - 2, p.x, p.y, p.w, p.h)) {
-      hurtPlayer(p.x + p.w / 2);
+    if (!player.dead && player.poof <= 0 && rectHit(player.x + 1, player.y + 1, player.w - 2, player.h - 2, p.x, p.y, p.w, p.h)) {
+      if (p.stomp && player.vy > 0 && player.prevBottom <= p.y + 4) {
+        bouncePlayer(Input.held.jump); Sound.sfx('stomp'); fx.hitstop = 0.04;
+        burst(p.x + 5, p.y + 5, '#6a6a90', 10, 60);
+      } else if (starOn() || player.rollT > 0) { burst(p.x + 5, p.y + 5, '#ffd84a', 8, 60); Sound.sfx('kapow'); }
+      else hurtPlayer(p.x + p.w / 2);
       P.splice(i, 1);
     }
   }
@@ -194,16 +344,38 @@ function enemyContacts() {
       continue;
     }
     if (e.type === 'boss') { bossContact(e); continue; }
+    if (e.type === 'leaper' && e.state === 'wait') continue;
     const fromAbove = p.vy > 0 && p.prevBottom <= e.y + 6;
+    if (starOn()) { killEnemy(e, 'star'); fx.hitstop = 0.04; addShake(2); continue; }
+    if (p.rollT > 0) { killEnemy(e, 'roll'); fx.hitstop = 0.05; addShake(2); p.rollT = Math.max(p.rollT, 0.15); continue; }
+    if (e.type === 'bomb') { bombContact(e, fromAbove); continue; }
     if (p.slam === 2) { killEnemy(e, 'slam'); fx.hitstop = 0.04; continue; }
     if (p.dashT > 0 && e.stompable) { killEnemy(e, 'dash'); fx.hitstop = 0.05; addShake(2); continue; }
     if (fromAbove && e.stompable) {
+      stompCombo(e);
       killEnemy(e, 'stomp'); bouncePlayer(Input.held.jump); fx.hitstop = 0.05; addShake(1.5);
       continue;
     }
+    if (e.type === 'boar' && e.state === 'dizzy') continue; // a dizzy boar is harmless
     if (fromAbove && !e.stompable) { hurtPlayer(e.x + e.w / 2); if (!p.dead) p.vy = -260; continue; }
     hurtPlayer(e.x + e.w / 2);
   }
+}
+
+function bombContact(e, fromAbove) {
+  const p = player;
+  if (e.state === 'walk') {
+    if (fromAbove || p.slam === 2 || p.dashT > 0) {
+      e.state = 'lit'; e.t = 1.7; e.vx = 0; Sound.sfx('fuse'); stompCombo(e);
+      floatText(e.x + 6, e.y - 6, 'UH OH!', '#ff7a1a');
+      bouncePlayer(Input.held.jump); fx.hitstop = 0.05;
+      return;
+    }
+    hurtPlayer(e.x + e.w / 2); return;
+  }
+  // a lit bomb: stand on it, or kick it away from you
+  if (fromAbove) { bouncePlayer(Input.held.jump); return; }
+  if (Math.abs(e.vx) < 30) { e.vx = (p.x + 5 < e.x + e.w / 2 ? 1 : -1) * 170; e.vy = -90; Sound.sfx('kick'); floatText(e.x + 6, e.y - 6, 'KICK!', '#ffd84a'); }
 }
 
 function catchMimic(e) {
@@ -358,6 +530,41 @@ function drawEnemies() {
         else s = ART.mimic[Math.floor(e.anim * 10) % 2], ox = 0, oy = 0;
         break;
       case 'boss': drawBoss(e); continue;
+      case 'boar':
+        s = e.state === 'charge' || e.state === 'alert' || e.state === 'skid' ? ART.boarMad : ART.boar[Math.floor(e.anim * (e.state === 'walk' ? 6 : 0)) % 2];
+        ox = 1; oy = e.state === 'charge' ? Math.floor(e.anim * 16) % 2 : 0;
+        if (e.state === 'alert') ox += Math.floor(e.anim * 30) % 2;
+        break;
+      case 'bomb': {
+        const lit = e.state === 'lit';
+        const fl = lit && Math.floor(e.t * (e.t < 0.6 ? 20 : 10)) % 2;
+        s = (fl ? ART.bombLit : ART.bomb)[Math.floor(e.anim * (lit ? 0 : 6)) % 2]; ox = 1; oy = 2;
+        if (lit) glow('orange', e.x + 9, e.y - 2, 8, 0.8);
+        break;
+      }
+      case 'ghost': {
+        const g = e.shy ? ART.ghostShy : ART.ghost;
+        ctx.globalAlpha = e.alpha;
+        ctx.drawImage(flip ? g.f : g.c, Math.round(e.x) - 2, Math.round(e.y + Math.sin(e.anim * 3) * 1.5) - 1);
+        ctx.globalAlpha = 1;
+        continue;
+      }
+      case 'leaper':
+        if (e.state === 'wait') continue;
+        glow('orange', e.x + 5, e.y + 5, 14, 0.8);
+        s = ART.leaper[Math.floor(e.anim * 10) % 2]; ox = 1; oy = 1;
+        if (e.vy > 0) { // falling: upside down
+          ctx.save(); ctx.translate(Math.round(e.x + 5), Math.round(e.y + 5)); ctx.scale(1, -1);
+          ctx.drawImage(s.c, -7, -7); ctx.restore(); continue;
+        }
+        break;
+      case 'cloudy':
+        s = ART.cloudy[Math.floor(e.anim * 3) % 2]; ox = 1; oy = 1;
+        if (e.state === 'charge') { glow('gold', e.x + 9, e.y + 8, 16, 0.4 + Math.random() * 0.4); if (Math.floor(e.anim * 20) % 2) s = { c: whiteOf(s, false), f: whiteOf(s, true) }; }
+        break;
+      case 'penguin':
+        s = e.state === 'slide' ? ART.penguinSlide : ART.penguin[Math.floor(e.anim * 5) % 2]; ox = 1; oy = 0;
+        break;
     }
     if (!s) continue;
     const img = e.flash > 0 ? whiteOf(s, flip) : flip ? s.f : s.c;
@@ -368,8 +575,16 @@ function drawEnemies() {
     }
     ctx.drawImage(img, Math.round(e.x) - ox - 1, Math.round(e.y) - oy - 1);
     if (e.type === 'bat' && e.state === 'wake') Font.draw('!', e.x + 4, e.y - 10, { color: '#ffd84a', outline: true });
+    if (e.type === 'boar' && e.state === 'dizzy') {
+      for (let i = 0; i < 3; i++) { const a = e.anim * 6 + (i * Math.PI * 2) / 3; Font.draw('★', e.x + 5 + Math.cos(a) * 8, e.y - 7 + Math.sin(a) * 2, { color: '#ffd84a', shadow: false }); }
+    }
   }
   for (const p of level.projectiles) {
+    if (p.kind === 'ball') {
+      ctx.drawImage(p.vx < 0 ? ART.cannonball.f : ART.cannonball.c, Math.round(p.x) - 1, Math.round(p.y) - 1);
+      if (Math.random() < 0.4) addParticle(p.x + 5 - Math.sign(p.vx) * 6, p.y + 5, { col: 'rgba(200,192,216,0.7)', vy: rand(-10, 10), vx: -p.vx * 0.1, life: 0.35, g: -10 });
+      continue;
+    }
     const s = p.kind === 'seed' ? ART.seed : p.kind === 'feather' ? ART.feather : null;
     if (s) ctx.drawImage(p.vx < 0 ? s.f : s.c, Math.round(p.x) - 1, Math.round(p.y) - 1);
     else { // energy wave

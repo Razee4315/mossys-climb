@@ -6,6 +6,7 @@ const PHYS = {
   ACC_G: 1150, DEC_G: 1600, ACC_A: 780, DEC_A: 400, ICE_ACC: 280, ICE_DEC: 110,
   COYOTE: 0.1, BUFFER: 0.13, WJ_X: 150, WJ_V: 300, WJ_LOCK: 0.14, SLIDE: 72, GRIP_SLIDE: 36,
   DJ_V: 285, DASH_V: 300, DASH_T: 0.15, SLAM_V: 430, SPRING_V: 470,
+  GLIDE_FALL: 40, ROLL_V: 235, ROLL_T: 0.5, FLAP_V: 250,
 };
 
 const player = {
@@ -14,11 +15,12 @@ const player = {
   wallDir: 0, wallLock: 0, canDouble: true, canDash: true, dashT: 0, dashCd: 0, slam: 0, slamT: 0,
   hearts: 3, maxHearts: 3, invuln: 0, hurtLock: 0, dead: false, deadT: 0, poof: 0, poofTarget: null,
   safe: null, drop: false, dropT: 0, sx: 1, sy: 1, anim: 0, dustT: 0, prevBottom: 0, trail: [], idleT: 0,
+  power: null, shield: false, rollT: 0, rollCd: 0, gliding: false, inDraft: false, blinkT: 2, scarf: null, combo: 0,
 };
 
 function has(ability) {
   const a = player.char.ability;
-  return a === ability || (a === 'all' && ability !== 'slam');
+  return a === ability || (a === 'all' && (ability === 'grip' || ability === 'double' || ability === 'dash'));
 }
 
 function setupPlayer(charId) {
@@ -26,6 +28,7 @@ function setupPlayer(charId) {
   p.char = charById(charId);
   p.maxHearts = p.char.hearts;
   p.hearts = p.maxHearts;
+  p.power = null; p.shield = false; p.scarf = null;
 }
 
 function placePlayer(x, y) {
@@ -34,6 +37,7 @@ function placePlayer(x, y) {
     x, y, remX: 0, remY: 0, vx: 0, vy: 0, onGround: false, ground: null, wasGround: true, coyote: 0, buffer: 0, varJump: false,
     wallDir: 0, wallLock: 0, canDouble: true, canDash: true, dashT: 0, dashCd: 0, slam: 0, slamT: 0, invuln: 0.6, hurtLock: 0,
     dead: false, deadT: 0, poof: 0, poofTarget: null, drop: false, dropT: 0, sx: 1, sy: 1, trail: [], springLock: 0,
+    rollT: 0, rollCd: 0, gliding: false, inDraft: false, scarf: null, combo: 0,
   });
   p.safe = { x, y };
 }
@@ -44,6 +48,8 @@ function respawnAtCheckpoint() {
   const cp = L.checkpoint;
   const pos = cp ? { x: cp.x + 3, y: cp.y + TS - player.h } : L.spawn;
   placePlayer(pos.x, pos.y);
+  player.power = null; player.shield = false;
+  if (Sound.Music.cur === 'star') Sound.Music.play(level.def.music || THEMES[level.theme].music);
   player.hearts = player.maxHearts;
   player.facing = 1;
   updateCamera(0, true);
@@ -81,8 +87,12 @@ function updatePlayer(dt) {
     if (mp.dy) { if (mp.dy < 0) moveY(p, mp.dy, false); else { p.y += mp.dy; if (solidRect(p.x, p.y, p.w, p.h)) p.y -= mp.dy; } }
   }
 
+  if (p.onGround && p.ground && p.ground.kind === 'conveyor') moveX(p, p.ground.dir * CONVEYOR_V * dt);
+  p.rollCd = Math.max(0, p.rollCd - dt);
+
   let ix = p.hurtLock > 0 ? 0 : (I.right ? 1 : 0) - (I.left ? 1 : 0);
   const C = p.char;
+  const topSpeed = C.speed * (starOn() ? 1.22 : 1);
   const onIce = p.onGround && p.ground && p.ground.kind === 'ice';
   const wind = level.weather.gust && level.weather.gust.active ? level.weather.gust.dir : 0;
 
@@ -92,6 +102,12 @@ function updatePlayer(dt) {
     p.vx = p.facing * PHYS.DASH_V; p.vy = 0;
     if (Math.random() < 0.9) p.trail.push({ x: p.x, y: p.y, t: 0.25, f: p.facing });
     if (p.dashT <= 0) p.vx = p.facing * C.speed;
+  } else if (p.rollT > 0) {
+    p.rollT -= dt;
+    if (ix) p.facing = ix;
+    p.vx = approach(p.vx, p.facing * PHYS.ROLL_V, 900 * dt);
+    if (p.onGround && Math.random() < 0.5) dust(p.x + 5 - p.facing * 4, p.y + p.h, 1);
+    if (p.rollT <= 0) p.vx = p.facing * C.speed;
   } else if (p.slam === 1) {
     p.vx = 0;
   } else {
@@ -100,8 +116,8 @@ function updatePlayer(dt) {
     if (p.wallLock > 0) { /* keep wall-jump momentum */ }
     else if (ix !== 0) {
       if (p.vx !== 0 && Math.sign(p.vx) !== ix && p.onGround && !onIce) acc *= 1.8;
-      if (Math.abs(p.vx) > C.speed && Math.sign(p.vx) === ix) p.vx = approach(p.vx, ix * C.speed, dec * dt);
-      else p.vx = approach(p.vx, ix * C.speed, acc * dt);
+      if (Math.abs(p.vx) > topSpeed && Math.sign(p.vx) === ix) p.vx = approach(p.vx, ix * topSpeed, dec * dt);
+      else p.vx = approach(p.vx, ix * topSpeed, acc * dt);
       p.facing = ix;
     } else p.vx = approach(p.vx, 0, dec * dt);
     if (wind) p.vx += wind * (p.onGround ? 260 : 420) * dt;
@@ -110,7 +126,7 @@ function updatePlayer(dt) {
   // ---- walls ----
   p.wallDir = 0;
   let nearWall = 0;
-  if (!p.onGround && p.dashT <= 0) {
+  if (!p.onGround && p.dashT <= 0 && p.rollT <= 0) {
     if (solidRect(p.x + 2, p.y + 2, p.w, p.h - 4)) nearWall = 1;
     else if (solidRect(p.x - 2, p.y + 2, p.w, p.h - 4)) nearWall = -1;
     if (ix !== 0 && ix === nearWall && solidRect(p.x + ix, p.y + 2, p.w, p.h - 4) && p.vy > -20) p.wallDir = ix;
@@ -130,7 +146,8 @@ function updatePlayer(dt) {
   // ---- jumping ----
   if (p.buffer > 0 && p.slam === 0) {
     if (p.coyote > 0) {
-      p.vy = -PHYS.JUMP_V; p.coyote = 0; p.buffer = 0; p.varJump = true;
+      p.vy = -PHYS.JUMP_V * (C.jump || 1); p.coyote = 0; p.buffer = 0; p.varJump = true;
+      if (p.rollT > 0) { p.rollT = Math.max(p.rollT, 0.25); p.vy *= 0.92; } // roll-jump keeps the momentum
       if (p.ground && p.ground.kind === 'platform' && p.ground.plat.dy < 0) p.vy += p.ground.plat.dy * 30;
       p.onGround = false; p.ground = null;
       p.sx = 0.72; p.sy = 1.32;
@@ -149,6 +166,11 @@ function updatePlayer(dt) {
       p.sx = 0.8; p.sy = 1.25;
       for (let i = 0; i < 8; i++) addParticle(p.x + 5 + rand(-6, 6), p.y + p.h, { vx: rand(-40, 40), vy: rand(10, 50), col: pick(['#ffffff', '#a8dcff']), life: 0.4, g: -40 });
       Sound.sfx('djump');
+    } else if (wingsOn()) {
+      p.vy = -PHYS.FLAP_V; p.buffer = 0; p.varJump = true;
+      p.sx = 0.85; p.sy = 1.2;
+      for (let i = 0; i < 6; i++) addParticle(p.x + 5 + rand(-8, 8), p.y + p.h - 2, { vx: rand(-30, 30), vy: rand(20, 60), col: '#ffffff', life: 0.35, g: -30 });
+      Sound.sfx('flap');
     }
   }
 
@@ -159,6 +181,11 @@ function updatePlayer(dt) {
       p.dashT = PHYS.DASH_T; p.canDash = false; p.dashCd = 0.3; p.varJump = false;
       Sound.sfx('dash'); addShake(1.5);
       burst(p.x + 5, p.y + 7, '#ffc07a', 8, 50);
+    } else if (has('roll') && p.rollT <= 0 && p.rollCd <= 0) {
+      if (ix) p.facing = ix;
+      p.rollT = PHYS.ROLL_T; p.rollCd = 0.75; p.vx = p.facing * PHYS.ROLL_V;
+      Sound.sfx('roll'); addShake(1);
+      burst(p.x + 5, p.y + 10, '#e8e0d0', 6, 40);
     } else if (has('slam') && !p.onGround && p.slam === 0 && p.dashT <= 0) {
       p.slam = 1; p.slamT = 0.12; p.vx = 0; p.vy = -40;
       Sound.sfx('pop');
@@ -180,11 +207,21 @@ function updatePlayer(dt) {
     if (Math.abs(p.vy) < PHYS.APEX_V && (p.varJump || p.springLock > 0)) g *= 0.5;
     p.vy += g * dt;
     let maxFall = I.down && !p.wallDir ? PHYS.FAST_FALL : PHYS.MAX_FALL;
+    p.gliding = has('glide') && I.jump && p.vy > 0 && !p.wallDir && !p.onGround;
+    if (p.gliding) { maxFall = PHYS.GLIDE_FALL; if (Math.random() < 0.15) addParticle(p.x + 5 + rand(-6, 6), p.y, { col: '#ffffff', life: 0.3, vy: -10, g: 0 }); }
     if (p.wallDir && p.vy > 0) {
       maxFall = has('grip') ? PHYS.GRIP_SLIDE : PHYS.SLIDE;
       if (Math.random() < 0.3) addParticle(p.x + (p.wallDir > 0 ? p.w : 0), p.y + rand(4, 12), { col: '#e8e0d0', life: 0.3, vy: -10, g: 0 });
     }
     if (p.vy > maxFall) p.vy = approach(p.vy, maxFall, 1800 * dt);
+  }
+  // updraft columns lift you (gliders ride them higher)
+  p.inDraft = level.drafts.size > 0 && inDraft(p);
+  if (p.inDraft && p.slam !== 2) {
+    const lift = p.gliding ? DRAFT_LIFT * 1.25 : DRAFT_LIFT;
+    p.vy = Math.max(-lift, p.vy - 2000 * dt);
+    p.varJump = false; p.canDouble = true;
+    if (Math.random() < 0.3) addParticle(p.x + rand(0, 10), p.y + p.h, { col: '#e8f8ff', life: 0.3, vy: -80, g: 0 });
   }
 
   // ---- move X ----
@@ -198,6 +235,7 @@ function updatePlayer(dt) {
     }
     if (!popped) {
       if (p.dashT > 0) { p.dashT = 0; p.vx = 0; addShake(1); }
+      if (p.rollT > 0) { p.rollT = 0; addShake(1); Sound.sfx('land'); }
       p.vx = 0; p.remX = 0;
     }
   }
@@ -213,7 +251,7 @@ function updatePlayer(dt) {
           if (!solidRect(p.x + s * k, p.y - 1, p.w, p.h) && !solidRect(p.x + s * k, p.y, p.w, p.h)) { p.x += s * k; fixed = true; break; }
         }
       }
-      if (!fixed) { p.vy = 0; p.varJump = false; }
+      if (!fixed) { if (p.vy < -150) { dust(p.x + 5, p.y, 3, '#ffffff'); } p.vy = 0; p.varJump = false; }
     } else {
       p.vy = 0;
     }
@@ -231,7 +269,7 @@ function updatePlayer(dt) {
   if (p.onGround && p.ground.kind === 'crusher') { /* rides along via crusher update */ }
 
   // safe ground for spike / pit recovery
-  if (p.onGround && (p.ground.kind === 'solid' || p.ground.kind === 'ice') && !hazardAt(p.x - 10, p.y - 4, p.w + 20, p.h + 8)) {
+  if (p.onGround && (p.ground.kind === 'solid' || p.ground.kind === 'ice' || p.ground.kind === 'conveyor') && !hazardAt(p.x - 10, p.y - 4, p.w + 20, p.h + 8)) {
     const by = p.y + p.h;
     const supported = isSolidT(tileAt(Math.floor(p.x / TS), by / TS)) && isSolidT(tileAt(Math.floor((p.x + p.w - 1) / TS), by / TS));
     if (supported && by % TS === 0) p.safe = { x: p.x, y: p.y };
@@ -240,6 +278,8 @@ function updatePlayer(dt) {
   // ---- animation & juice ----
   p.sx = approach(p.sx, 1, dt * 3.5); p.sy = approach(p.sy, 1, dt * 3.5);
   p.anim += dt * (p.onGround ? Math.max(4, Math.abs(p.vx) / 9) : 6);
+  p.blinkT -= dt; if (p.blinkT < -0.12) p.blinkT = rand(1.8, 4.2);
+  if (p.onGround && p.ground.kind !== 'cloud') p.combo = 0;
   if (p.onGround && Math.abs(p.vx) > 70) { p.dustT -= dt; if (p.dustT <= 0) { p.dustT = 0.13; dust(p.x + 5 - p.facing * 4, p.y + p.h, 1); } }
   if (p.onGround && Math.abs(p.vx) < 5 && !Input.held.down) p.idleT += dt; else p.idleT = 0;
   for (let i = p.trail.length - 1; i >= 0; i--) { p.trail[i].t -= dt; if (p.trail[i].t <= 0) p.trail.splice(i, 1); }
@@ -268,9 +308,27 @@ function onLand(vy) {
   if (vy > 120) { dust(p.x + 5, p.y + p.h, 4 + Math.floor(k * 4)); Sound.sfx('land'); }
 }
 
+function inDraft(p) {
+  const L = level;
+  const tx0 = Math.floor((p.x + 2) / TS), tx1 = Math.floor((p.x + p.w - 3) / TS), ty0 = Math.floor(p.y / TS), ty1 = Math.floor((p.y + p.h - 1) / TS);
+  for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) if (L.drafts.has(ty * L.w + tx)) return true;
+  return false;
+}
+
+// bounce off a hazard without damage (star power / shield)
+function hazardBounce() {
+  const p = player;
+  p.vy = -300; p.varJump = false; p.onGround = false; p.y -= 2;
+  p.sx = 0.75; p.sy = 1.3; Sound.sfx('bounce');
+  burst(p.x + 5, p.y + p.h, '#ffffff', 8, 50);
+}
+
 function hazardHit(kind) {
   const p = player;
   if (p.dead || p.poof > 0) return;
+  if (kind !== 'pit' && starOn()) { hazardBounce(); return; }
+  if (kind !== 'pit' && p.shield) { popShield(); hazardBounce(); return; }
+  if (kind !== 'pit' && p.invuln > 0.3) { hazardBounce(); return; }
   stats.hits++;
   if (!Save.data.settings.assist) p.hearts--;
   Sound.sfx('hurt'); addShake(3); fx.hitstop = 0.06;
@@ -284,7 +342,8 @@ function hazardHit(kind) {
 
 function hurtPlayer(fromX, dmg = 1) {
   const p = player;
-  if (p.dead || p.poof > 0 || p.invuln > 0) return;
+  if (p.dead || p.poof > 0 || p.invuln > 0 || starOn()) return;
+  if (p.shield) { popShield(fromX); return; }
   stats.hits++;
   if (!Save.data.settings.assist) p.hearts -= dmg;
   Sound.sfx('hurt'); addShake(3); fx.hitstop = 0.07;
@@ -292,13 +351,16 @@ function hurtPlayer(fromX, dmg = 1) {
   if (p.hearts <= 0) { killPlayer('hit'); return; }
   const dir = p.x + 5 < fromX ? -1 : 1;
   p.vx = dir * 150; p.vy = -210; p.invuln = 1.3; p.hurtLock = 0.28;
-  p.dashT = 0; p.slam = 0; p.varJump = false;
+  p.dashT = 0; p.slam = 0; p.varJump = false; p.rollT = 0;
+  floatText(p.x + 5, p.y - 4, '-1 ♥', '#ff4d6d');
 }
 
 function killPlayer(cause) {
   const p = player;
   if (p.dead) return;
   p.dead = true; p.deadT = 1.0; p.hearts = 0;
+  if (p.power) endPower(true);
+  p.shield = false;
   stats.deaths++; level.deaths++;
   Save.data.totalDeaths++;
   Sound.sfx('death'); addShake(5); fx.hitstop = 0.12;
@@ -310,43 +372,110 @@ function killPlayer(cause) {
 function bouncePlayer(strong) {
   const p = player;
   p.vy = strong ? -340 : -245;
-  p.varJump = strong; p.canDouble = true; p.canDash = true; p.slam = 0;
+  p.varJump = strong; p.canDouble = true; p.canDash = true; p.slam = 0; p.rollT = 0;
   p.sx = 0.75; p.sy = 1.3;
 }
 
 // ---------------------------------------------------------------------
-function drawPlayer() {
+function playerSprite() {
   const p = player;
-  if (p.dead) return;
   const F = ART.chars[p.char.id];
   let s, flip = p.facing < 0;
-  if (p.slam) s = F.crouch;
+  if (p.rollT > 0) s = F.ball[((Math.floor(p.anim * 3 * (p.facing < 0 ? -1 : 1)) % 4) + 4) % 4], flip = false;
+  else if (p.slam) s = F.crouch;
   else if (!p.onGround) {
     if (p.wallDir) { s = F.fall; flip = p.wallDir > 0; }
     else s = p.vy < 0 ? F.jump : F.fall;
   } else if (Math.abs(p.vx) > 10) s = F.run[Math.floor(p.anim) % 4];
   else if (Input.held.down && p.onGround) s = F.crouch;
-  else s = F.idle[Math.floor(p.anim * 0.4) % 2];
+  else s = p.blinkT < 0 ? F.blink : F.idle[Math.floor(p.anim * 0.4) % 2];
+  return { s, flip };
+}
 
-  // after-images (dash / slam)
+// a soft shadow on the floor below the climber
+function drawPlayerShadow() {
+  const p = player;
+  if (p.dead || p.poof > 0) return;
+  const cx = p.x + p.w / 2, gy = groundYAt(cx, p.y + p.h - 2);
+  const d = gy - (p.y + p.h);
+  if (d > 90 || d < 0) return;
+  const k = 1 - d / 90, w = Math.round(4 + 5 * k);
+  ctx.globalAlpha = 0.28 * k; ctx.fillStyle = '#0a0612';
+  ctx.fillRect(Math.round(cx - w), gy - 1, w * 2, 2); ctx.fillRect(Math.round(cx - w + 2), gy - 2, w * 2 - 4, 1);
+  ctx.globalAlpha = 1;
+}
+
+// the trailing scarf: a little rope that follows the climber's neck
+function updateScarf(dt) {
+  const p = player;
+  if (!p.char.scarf) return;
+  const ax = p.x + p.w / 2 - p.facing * 3, ay = p.y + 6 + (p.onGround && Math.abs(p.vx) > 10 ? (Math.floor(p.anim) % 2 ? -1 : 0) : 0);
+  if (!p.scarf) { p.scarf = []; for (let i = 0; i < 5; i++) p.scarf.push({ x: ax - p.facing * i * 2, y: ay }); }
+  const S = p.scarf, t = level.time;
+  const wind = level.weather && level.weather.gust && level.weather.gust.active ? level.weather.gust.dir : 0;
+  S[0].x = ax; S[0].y = ay;
+  // each knot drifts to a spot just behind the one before it: the ribbon streams out
+  // behind when running, flutters up when falling and droops when rising
+  for (let i = 1; i < S.length; i++) {
+    const a = S[i - 1], q = S[i];
+    const ox = -p.facing * 2.2 - p.vx * 0.007 + wind * 1.5;
+    const oy = 0.45 + Math.sin(t * 11 - i * 0.9) * 0.55 - p.vy * 0.006 - (p.inDraft ? 1.5 : 0);
+    q.x += (a.x + ox - q.x) * 0.5; q.y += (a.y + oy - q.y) * 0.5;
+    const dx = q.x - a.x, dy = q.y - a.y, d = Math.hypot(dx, dy) || 1;
+    q.x = a.x + (dx / d) * 2.2; q.y = a.y + (dy / d) * 2.2;
+  }
+}
+function drawScarf() {
+  const p = player, S = p.scarf, col = p.char.scarf;
+  if (!S || !col || p.rollT > 0) return;
+  const dark = shade(col, -0.35);
+  for (let i = S.length - 1; i >= 1; i--) {
+    const q = S[i];
+    ctx.fillStyle = '#1a1428'; ctx.fillRect(Math.round(q.x) - 1, Math.round(q.y) - 1, i < S.length - 1 ? 3 : 2, 3);
+  }
+  for (let i = S.length - 1; i >= 1; i--) {
+    const q = S[i];
+    ctx.fillStyle = i % 2 ? col : dark; ctx.fillRect(Math.round(q.x), Math.round(q.y), i < S.length - 1 ? 2 : 1, 2);
+  }
+}
+
+function drawPlayer() {
+  const p = player;
+  if (p.dead) return;
+  const { s, flip } = playerSprite();
+  // after-images (dash / slam / roll / star)
   for (const t of p.trail) {
     ctx.globalAlpha = (t.t / 0.25) * 0.5;
-    ctx.drawImage(silhouetteCached(s, t.f < 0, p.char.pal.h), Math.round(t.x) - 4, Math.round(t.y) - 4);
+    ctx.drawImage(silhouetteCached(s, t.f < 0, t.col || p.char.pal.h), Math.round(t.x) - 4, Math.round(t.y) - 4);
   }
   ctx.globalAlpha = 1;
-  if (p.invuln > 0 && Math.floor(p.invuln * 14) % 2 === 0 && p.poof <= 0) return;
-  const img = p.poof > 0 ? whiteOf(s, flip) : (flip ? s.f : s.c);
+  if (p.invuln > 0 && !starOn() && Math.floor(p.invuln * 14) % 2 === 0 && p.poof <= 0) return;
+  drawPlayerPowerFx(true);
+  if (p.poof <= 0) drawScarf();
+  let img = p.poof > 0 ? whiteOf(s, flip) : (flip ? s.f : s.c);
+  if (starOn() && Math.floor(level.time * 16) % 3 === 0) img = silhouetteCached(s, flip, pick(['#fff6b0', '#ffd84a', '#ffb0e0']));
   const cx = Math.round(p.x + p.w / 2), by = Math.round(p.y + p.h);
-  if (Math.abs(p.sx - 1) < 0.02 && Math.abs(p.sy - 1) < 0.02) {
-    ctx.drawImage(img, cx - 9, by - 18 + 0);
+  if (p.rollT > 0) {
+    ctx.drawImage(img, cx - 8, by - 15);
+  } else if (Math.abs(p.sx - 1) < 0.02 && Math.abs(p.sy - 1) < 0.02) {
+    ctx.drawImage(img, cx - 9, by - 18);
   } else {
     const w = img.width * p.sx, h = img.height * p.sy;
     ctx.drawImage(img, Math.round(cx - w / 2), Math.round(by - h + 1 * p.sy), Math.round(w), Math.round(h));
   }
+  // glide: ears spin like a little propeller
+  if (p.gliding && p.rollT <= 0) {
+    const f = Math.floor(level.time * 24) % 2;
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(cx - 6 + f * 2, by - 21, 5 - f * 2, 1); ctx.fillRect(cx + 1 - f, by - 21, 5 - f * 2, 1);
+  }
+  drawPlayerPowerFx(false);
 }
 const _silCache = new Map();
+// silhouettes are cached per sprite + colour (after-images, star flicker, locked climbers)
+let _silId = 0;
 function silhouetteCached(s, flip, col) {
-  const key = s.c;
+  if (!s.c.__sid) s.c.__sid = ++_silId;
+  const key = s.c.__sid + col;
   let e = _silCache.get(key);
   if (!e) { const a = silhouette(s.c, col); e = { a, f: flipCanvas(a) }; _silCache.set(key, e); }
   return flip ? e.f : e.a;

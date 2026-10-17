@@ -1,9 +1,10 @@
 // =====================================================================
 //  WORLD — level loading, collision, hazards, props, events, camera
 // =====================================================================
-const T = { EMPTY: 0, SOLID: 1, ONEWAY: 2, SPIKE_U: 3, SPIKE_D: 4, SPIKE_L: 5, SPIKE_R: 6, ICE: 7, LAVA: 8, COLLAPSE: 9 };
+const T = { EMPTY: 0, SOLID: 1, ONEWAY: 2, SPIKE_U: 3, SPIKE_D: 4, SPIKE_L: 5, SPIKE_R: 6, ICE: 7, LAVA: 8, COLLAPSE: 9, CONV_L: 10, CONV_R: 11, BEAT: 12, CLOUD: 13 };
 const SPIKE_BOX = { 3: [1, 8, 14, 8], 4: [1, 0, 14, 8], 5: [8, 1, 8, 14], 6: [0, 1, 8, 14] };
-const ENEMY_CHARS = { B: 'beetle', N: 'spiny', Y: 'bat', Q: 'plant', W: 'wasp', U: 'waspV', G: 'slime', M: 'mimic', D: 'boss' };
+const ENEMY_CHARS = { B: 'beetle', N: 'spiny', Y: 'bat', Q: 'plant', W: 'wasp', U: 'waspV', G: 'slime', M: 'mimic', D: 'boss', A: 'boar', '{': 'bomb', ';': 'ghost', ',': 'leaper', '`': 'cloudy', _: 'penguin' };
+const POWER_CHARS = { '@': 'star', '&': 'shield', '"': 'wings', $: 'magnet' };
 
 let level = null;          // current level runtime
 const fx = { particles: [], texts: [], weather: [], banners: [], shake: 0, hitstop: 0, flash: 0, flashCol: '#ffffff' };
@@ -22,6 +23,7 @@ function parseLevel(idx) {
     spawn: null, checkpoints: [], finish: null, gems: [], hearts: [], signs: [], springs: [], platforms: [],
     crumbles: [], collapses: [], secrets: [], stals: [], crushers: [], enemySpawns: [], markers: {}, triggers: {},
     stops: new Set(), events: [], lava: null, lavaTiles: [], gates: [],
+    saws: [], firebars: [], cannons: [], beats: [], puffs: [], drafts: new Set(), draftCells: [], conveyors: [], powerups: [],
   };
   let signI = 0, gemI = 0;
   const collapseCells = [], secretCells = [];
@@ -54,10 +56,22 @@ function parseLevel(idx) {
         case 'H': case 'V': L.platforms.push({ tx, ty, axis: ch === 'H' ? 'x' : 'y' }); break;
         case ':': L.stops.add(ty * w + tx); break;
         case 'K': L.crushers.push({ tx, ty }); break;
+        case '(': set(T.CONV_L); a = '#'; L.conveyors.push({ tx, ty, dir: -1 }); break;
+        case ')': set(T.CONV_R); a = '#'; L.conveyors.push({ tx, ty, dir: 1 }); break;
+        case '[': case ']': L.beats.push({ tx, ty, group: ch === '[' ? 0 : 1 }); if (ch === '[') set(T.BEAT); break;
+        case '~': set(T.CLOUD); L.puffs.push({ tx, ty, state: 'idle', t: 0 }); break;
+        case '|': L.drafts.add(ty * w + tx); L.draftCells.push({ tx, ty }); break;
+        case 'O': L.saws.push({ x: px + 8, y: py + 8, r: 9, axis: null }); break;
+        case 'Z': case 'J': L.saws.push({ tx, ty, x: px + 8, y: py + 8, r: 9, axis: ch === 'Z' ? 'x' : 'y' }); break;
+        case 'E': set(T.SOLID); a = '#'; L.firebars.push({ x: px + 8, y: py + 8, len: 5, dir: tx % 2 ? 1 : -1 }); break;
+        case 'R': set(T.SOLID); a = '#'; L.cannons.push({ x: px, y: py, tx, ty }); break;
         case '!': L.stals.push({ x: px, y: py }); break;
         default:
-          if (ENEMY_CHARS[ch]) {
+          if (POWER_CHARS[ch]) {
+            L.powerups.push({ kind: POWER_CHARS[ch], x: px + 2, y: py + 2, got: false, bob: tx * 0.9 });
+          } else if (ENEMY_CHARS[ch]) {
             const sp = { type: ENEMY_CHARS[ch], tx, ty };
+            if (ch === ',') { set(T.LAVA); L.lavaTiles.push({ tx, ty }); } // leapers live in lava
             if (ch === 'M') { sp.gemId = gemI++; L.gems.push({ id: sp.gemId, mimic: true, got: false }); } // mimics hold a gem
             L.enemySpawns.push(sp);
           } else if (ch >= '1' && ch <= '9') {
@@ -85,6 +99,7 @@ function parseLevel(idx) {
   L.crushers = L.crushers.map(({ tx, ty }) => ({ x: tx * TS, y: ty * TS, y0: ty * TS, w: 32, h: 32, state: 'idle', t: 0, vy: 0 }));
   L.stals = L.stals.map((s) => ({ ...s, x0: s.x, y0: s.y, state: 'idle', t: 0, vy: 0 }));
   L.events = (def.events || []).map((e) => ({ ...e, fired: false }));
+  setupHazards(L);
   return L;
 }
 
@@ -126,6 +141,7 @@ function buildPlatform(L, { tx, ty, axis }) {
   return { axis, x: tx * TS, y: ty * TS, min: a * TS, max: b * TS + 10, w: 32, h: 6, dir: -1, pause: 0, dx: 0, dy: 0, remX: 0, remY: 0, x0: tx * TS, y0: ty * TS };
 }
 
+const _bgCache = {};
 // Build everything needed to play a level (art included)
 function startLevel(idx) {
   level = parseLevel(idx);
@@ -133,7 +149,7 @@ function startLevel(idx) {
   const art = buildLevelArt(L);
   L.art = art.canvas; L.lights = art.lights;
   L.props = buildThemeProps(L.theme);
-  L.bg = buildBackground(L.theme);
+  L.bg = _bgCache[L.theme] || (_bgCache[L.theme] = buildBackground(L.theme)); // parallax art is the same every visit
   for (const c of L.collapses) c.tiles = c.cells.map(([x, y]) => buildTileCanvas(L, x, y, true));
   L.wallPattern = ctx.createPattern(buildWallTile(L.theme), 'repeat');
   for (const s of L.secrets) {
@@ -158,7 +174,7 @@ function groundYAt(x, y) {
   for (let ty = Math.max(0, Math.floor(y / TS)); ty < level.h; ty++) { const t = tileAt(tx, ty); if (isSolidT(t) || t === T.ONEWAY) return ty * TS; }
   return level.h * TS;
 }
-function isSolidT(t) { return t === T.SOLID || t === T.ICE || t === T.COLLAPSE; }
+function isSolidT(t) { return t === T.SOLID || t === T.ICE || t === T.COLLAPSE || t === T.CONV_L || t === T.CONV_R || t === T.BEAT; }
 function tileAt(tx, ty) {
   if (tx < 0 || tx >= level.w || ty < 0) return T.SOLID;
   if (ty >= level.h) return T.EMPTY;
@@ -181,7 +197,7 @@ function onewayUnder(x, y, w, h) {
   const bottom = y + h;
   if (bottom % TS === 0) {
     const ty = bottom / TS;
-    for (let tx = Math.floor(x / TS); tx <= Math.floor((x + w - 1) / TS); tx++) if (tileAt(tx, ty) === T.ONEWAY) return { kind: 'oneway' };
+    for (let tx = Math.floor(x / TS); tx <= Math.floor((x + w - 1) / TS); tx++) { const t = tileAt(tx, ty); if (t === T.ONEWAY) return { kind: 'oneway' }; if (t === T.CLOUD) return { kind: 'cloud', tx, ty }; }
   }
   for (const p of level.platforms) if (p.y === bottom && x + w > p.x && x < p.x + p.w) return { kind: 'platform', plat: p };
   return null;
@@ -220,7 +236,8 @@ function groundUnder(e) {
       const t = tileAt(tx, ty);
       if (t === T.ICE) kind = 'ice';
       if (t === T.COLLAPSE) { kind = 'collapse'; break; }
-      if (t === T.SOLID) { kind = 'solid'; break; }
+      if (t === T.SOLID || t === T.BEAT) { kind = 'solid'; break; }
+      if (t === T.CONV_L || t === T.CONV_R) return { kind: 'conveyor', dir: t === T.CONV_L ? -1 : 1 };
     }
     for (const c of level.crumbles) if (c.state !== 'gone' && rectHit(e.x, e.y + 1, e.w, e.h, c.x, c.y, c.w, c.h)) { kind = 'crumble'; c.touched = true; }
     for (const k of level.crushers) if (rectHit(e.x, e.y + 1, e.w, e.h, k.x, k.y, k.w, k.h) && e.y + e.h <= k.y) return { kind: 'crusher', crusher: k };
@@ -258,7 +275,8 @@ function resetDynamic(first = false) {
   for (const k of L.crushers) { k.y = k.y0; k.state = 'idle'; k.t = 0; k.vy = 0; }
   for (const s of L.stals) { s.x = s.x0; s.y = s.y0; s.state = 'idle'; s.t = 0; s.vy = 0; }
   for (const g of L.gates) g.closed = false;
-  L.rocks = []; L.boulders = []; L.popSpikes = []; L.projectiles = [];
+  L.rocks = []; L.boulders = []; L.popSpikes = []; L.projectiles = []; L.blasts = [];
+  resetHazards(L);
   L.weather = { ...L.weather0, gust: null, bolts: [] };
   L.darkTarget = THEMES[L.theme].darkness;
   cam.lock = null; L.arena = null;
@@ -581,8 +599,18 @@ function fireEvent(ev) {
       break;
     case 'spikes':
       Sound.sfx('warn');
-      marks(ev.marker).forEach((m) => L.popSpikes.push({ tx: m.tx, ty: m.ty, t: ev.delay || 0.45, up: 0 }));
+      marks(ev.marker).forEach((m, i) => L.popSpikes.push({ tx: m.tx, ty: m.ty, t: (ev.delay || 0.45) + i * (ev.stagger || 0), up: 0, dir: ev.dir || '^' }));
       break;
+    case 'chase':
+      startChaser(ev);
+      break;
+    case 'dissolve': {
+      // every puff cloud between two markers melts away, left to right
+      const a = marks(ev.from)[0], b = marks(ev.to)[0];
+      Sound.sfx('poof');
+      for (const p of L.puffs) if (p.state === 'idle' && p.tx >= a.tx && p.tx <= b.tx) { p.state = 'shake'; p.t = (ev.delay || 0.5) + (p.tx - a.tx) * (ev.stagger || 0.05); }
+      break;
+    }
     case 'weather':
       if (ev.gusts != null) { L.weather.gusts = ev.gusts; L.weather.gustT = 1.5; }
       if (ev.lightning != null) { L.weather.lightning = ev.lightning; L.weather.boltT = 1.2; }
@@ -637,8 +665,8 @@ function updatePopSpikes(dt) {
   for (const s of level.popSpikes) {
     if (s.t > 0) {
       s.t -= dt;
-      if (Math.random() < 0.3) addParticle(s.tx * TS + rand(2, 14), s.ty * TS + 14, { col: '#ffffff', life: 0.25, vy: -20 });
-      if (s.t <= 0) { level.grid[s.ty * level.w + s.tx] = T.SPIKE_U; Sound.sfx('crack'); }
+      if (Math.random() < 0.3) addParticle(s.tx * TS + rand(2, 14), s.ty * TS + (s.dir === 'v' ? 2 : 14), { col: '#ffffff', life: 0.25, vy: s.dir === 'v' ? 20 : -20 });
+      if (s.t <= 0) { level.grid[s.ty * level.w + s.tx] = s.dir === 'v' ? T.SPIKE_D : T.SPIKE_U; Sound.sfx('crack'); }
     } else s.up = Math.min(1, s.up + dt * 8);
   }
 }
